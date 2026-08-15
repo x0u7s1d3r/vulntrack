@@ -40,12 +40,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: vulntrack-api:0.2.0
+    image: vulntrack-api:0.3.0
     container_name: vulntrack-api
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
+      API_KEYS: ${API_KEYS}
+      RATE_LIMIT_DEFAULT: ${RATE_LIMIT_DEFAULT}
+      RATE_LIMIT_WRITE: ${RATE_LIMIT_WRITE}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      ENVIRONMENT: ${ENVIRONMENT}
+      
+      
     ports:
       - "8001:8000"
     depends_on:

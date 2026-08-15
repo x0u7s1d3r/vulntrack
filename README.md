@@ -273,3 +273,5 @@ Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/l
 ## Licence
 
 MIT
+
+| 4 | Rate limiting basé sur l'IP source directe | Inopérant derrière un load balancer, toutes les requêtes semblent venir de la même IP | Étape 8 : prise en compte de X-Forwarded-For |

@@ -1,11 +1,47 @@
 from datetime import datetime
+from enum import Enum
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class AssetType(str, Enum):
+    IMAGE = "image"
+    REPOSITORY = "repository"
+    URL = "url"
+    HOST = "host"
+
+
+class Severity(str, Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INFO = "info"
+
+
+class FindingStatus(str, Enum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    FIXED = "fixed"
+    ACCEPTED = "accepted"
+    FALSE_POSITIVE = "false_positive"
 
 
 class AssetCreate(BaseModel):
-    name: str
-    type: str
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    type: AssetType
+
+    @field_validator("name")
+    @classmethod
+    def name_must_be_clean(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("le nom ne peut pas etre vide")
+        if any(c in v for c in ["\n", "\r", "\x00"]):
+            raise ValueError("caracteres de controle interdits")
+        return v
 
 
 class AssetOut(BaseModel):

@@ -1,4 +1,5 @@
 import pytest
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -6,6 +7,15 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
 from app.main import app
+import os
+import pytest
+
+os.environ["API_KEYS"] = "test-key"
+os.environ["DATABASE_URL"] = "sqlite://"
+
+from app.config import get_settings
+
+get_settings.cache_clear()
 
 engine = create_engine(
     "sqlite://",
@@ -35,3 +45,7 @@ def client(db_session):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+@pytest.fixture()
+def auth_headers():
+    return {"X-API-Key": "test-key"}
