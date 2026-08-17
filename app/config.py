@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     environment: str = "development"
 
+    report_storage_path: str = "/data/reports"
+
     @property
     def api_key_list(self) -> list[str]:
         return [k.strip() for k in self.api_keys.split(",") if k.strip()]

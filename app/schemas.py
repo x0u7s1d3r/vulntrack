@@ -65,3 +65,26 @@ class FindingOut(BaseModel):
     status: str
     first_seen: datetime
     last_seen: datetime
+
+
+class ScannerType(str, Enum):
+    TRIVY = "trivy"
+
+
+class ScanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    asset_id: int
+    scanner: str
+    status: str
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    findings_count: Optional[int] = None
+    error_message: Optional[str] = None
+
+
+class IngestAccepted(BaseModel):
+    scan_id: int
+    status: str
+    message: str

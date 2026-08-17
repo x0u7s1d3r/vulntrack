@@ -1,5 +1,12 @@
 import logging
 
+import json
+
+from fastapi import File, Form, UploadFile
+
+from app.queue import ingest_queue
+from app.storage import save_report
+
 from fastapi import FastAPI, Depends, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -101,3 +108,76 @@ def list_findings(request: Request, asset_id: int, db: Session = Depends(get_db)
     if not asset:
         raise HTTPException(status_code=404, detail="Asset introuvable")
     return db.query(models.Finding).filter_by(asset_id=asset_id).all()
+
+
+MAX_REPORT_SIZE = 20 * 1024 * 1024
+
+
+@app.post(
+    "/scans/ingest",
+    response_model=schemas.IngestAccepted,
+    status_code=202,
+    dependencies=[Depends(require_api_key)],
+)
+@limiter.limit(settings.rate_limit_write)
+async def ingest_scan(
+    request: Request,
+    asset_name: str = Form(min_length=1, max_length=255),
+    asset_type: schemas.AssetType = Form(),
+    scanner: schemas.ScannerType = Form(),
+    report: UploadFile = File(),
+    db: Session = Depends(get_db),
+):
+    content = await report.read()
+
+    if len(content) > MAX_REPORT_SIZE:
+        raise HTTPException(status_code=413, detail="Rapport trop volumineux")
+
+    if not content:
+        raise HTTPException(status_code=400, detail="Rapport vide")
+
+    try:
+        json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Rapport JSON invalide")
+
+    asset = db.query(models.Asset).filter_by(name=asset_name).first()
+    if not asset:
+        asset = models.Asset(name=asset_name, type=asset_type.value)
+        db.add(asset)
+        db.flush()
+
+    path = save_report(content, scanner.value)
+
+    scan = models.Scan(
+        asset_id=asset.id,
+        scanner=scanner.value,
+        status="pending",
+        raw_report_path=path,
+    )
+    db.add(scan)
+    db.commit()
+    db.refresh(scan)
+
+    ingest_queue.enqueue("app.jobs.process_scan", scan.id)
+
+    logger.info("Scan %s mis en file pour %s", scan.id, asset.name)
+
+    return schemas.IngestAccepted(
+        scan_id=scan.id,
+        status="pending",
+        message="Rapport accepte, traitement en cours",
+    )
+
+
+@app.get(
+    "/scans/{scan_id}",
+    response_model=schemas.ScanOut,
+    dependencies=[Depends(require_api_key)],
+)
+@limiter.limit(settings.rate_limit_default)
+def get_scan(request: Request, scan_id: int, db: Session = Depends(get_db)):
+    scan = db.get(models.Scan, scan_id)
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan introuvable")
+    return scan

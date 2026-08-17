@@ -40,7 +40,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: vulntrack-api:0.3.0
+    image: vulntrack-api:0.4.0
     container_name: vulntrack-api
     restart: unless-stopped
     environment:
@@ -51,10 +51,35 @@ services:
       RATE_LIMIT_WRITE: ${RATE_LIMIT_WRITE}
       CORS_ORIGINS: ${CORS_ORIGINS}
       ENVIRONMENT: ${ENVIRONMENT}
-      
+      REPORT_STORAGE_PATH: /data/reports
       
     ports:
       - "8001:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - vulntrack-net
+    volumes:
+      - vulntrack-reports:/data/reports
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vulntrack-api:0.4.0
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      REPORT_STORAGE_PATH: /data/reports
+      API_KEYS: ${API_KEYS}
+      ENVIRONMENT: ${ENVIRONMENT}
+    volumes:
+      - vulntrack-reports:/data/reports
     depends_on:
       db:
         condition: service_healthy
@@ -66,6 +91,7 @@ services:
 volumes:
   vulntrack-data:
   vulntrack-redis-data:
+  vulntrack-reports:
 
 networks:
   vulntrack-net:

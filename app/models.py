@@ -28,7 +28,11 @@ class Scan(Base):
     scanner = Column(String(50), nullable=False)
     status = Column(String(20), default="pending")
     started_at = Column(DateTime(timezone=True), default=utcnow)
-
+   
+    raw_report_path = Column(String(500), nullable=True)
+    error_message = Column(Text, nullable=True)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    findings_count = Column(Integer, default=0)
 
 class Finding(Base):
     __tablename__ = "findings"

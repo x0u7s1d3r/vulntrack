@@ -26,6 +26,8 @@ COPY --from=builder /install /usr/local
 COPY --chown=vulntrack:vulntrack app/ ./app/
 COPY --chown=vulntrack:vulntrack alembic/ ./alembic/
 COPY --chown=vulntrack:vulntrack alembic.ini .
+COPY --chown=vulntrack:vulntrack worker.py .
+RUN mkdir -p /data/reports && chown -R vulntrack:vulntrack /data
 
 USER vulntrack
 
