@@ -1,4 +1,5 @@
-from typing import Iterator, TypedDict
+from collections.abc import Iterator
+from typing import TypedDict
 
 
 class ParsedFinding(TypedDict):

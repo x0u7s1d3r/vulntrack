@@ -1,13 +1,17 @@
-import logging
-
 import json
+import logging
+from contextlib import asynccontextmanager
 
-from fastapi import File, Form, UploadFile
-
-from app.queue import ingest_queue
-from app.storage import save_report
-
-from fastapi import FastAPI, Depends, HTTPException, Request, status
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -15,27 +19,50 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
+from app import models, schemas
+from app.cache import cached_json, invalidate
 from app.config import get_settings
 from app.database import get_db
 from app.middleware import SecurityHeadersMiddleware
+from app.queue import ingest_queue
 from app.security import require_api_key
-from app import models, schemas
+from app.storage import save_report
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
+CACHE_TTL_ASSETS = 30
+CACHE_TTL_FINDINGS = 15
+MAX_REPORT_SIZE = 20 * 1024 * 1024
+
 limiter = Limiter(key_func=get_remote_address)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Demarrage de l'application")
+    yield
+    logger.info("Arret en cours, fermeture des connexions")
+    from app.database import engine
+
+    engine.dispose()
+
 
 app = FastAPI(
     title="VulnTrack",
-    version="0.3.0",
+    version="0.5.0",
     docs_url="/docs" if settings.environment == "development" else None,
     redoc_url=None,
+    lifespan=lifespan,
 )
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
 app.add_middleware(SecurityHeadersMiddleware)
 
 if settings.cors_origin_list:
@@ -57,10 +84,53 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
+# ---------------------------------------------------------------- sante
+
+
 @app.get("/health")
-@limiter.limit("300/minute")
+@limiter.limit("600/minute")
 def health(request: Request):
+    """Sonde de vivacite. Ne touche aucune dependance : repond tant que le
+    processus applicatif est vivant."""
     return {"status": "ok"}
+
+
+@app.get("/ready")
+@limiter.limit("600/minute")
+def ready(request: Request, db: Session = Depends(get_db)):
+    """Sonde de disponibilite. Verifie que les dependances critiques repondent,
+    afin que l'orchestrateur ne route pas de trafic vers une instance
+    incapable de le traiter."""
+    from sqlalchemy import text
+
+    checks = {"database": False, "cache": False}
+
+    try:
+        db.execute(text("SELECT 1"))
+        checks["database"] = True
+    except Exception:
+        logger.warning("Sonde de disponibilite : base injoignable")
+
+    try:
+        from app.cache import cache_client
+
+        cache_client.ping()
+        checks["cache"] = True
+    except Exception:
+        logger.warning("Sonde de disponibilite : cache injoignable")
+
+    # Le cache est facultatif : son indisponibilite degrade les performances
+    # mais n'empeche pas de servir les requetes.
+    if not checks["database"]:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "unavailable", "checks": checks},
+        )
+
+    return {"status": "ready", "checks": checks}
+
+
+# ---------------------------------------------------------------- assets
 
 
 @app.post(
@@ -83,6 +153,8 @@ def create_asset(
     db.add(asset)
     db.commit()
     db.refresh(asset)
+
+    invalidate("assets:*")
     logger.info("Asset cree: %s", asset.name)
     return asset
 
@@ -94,7 +166,11 @@ def create_asset(
 )
 @limiter.limit(settings.rate_limit_default)
 def list_assets(request: Request, db: Session = Depends(get_db)):
-    return db.query(models.Asset).all()
+    def produce():
+        assets = db.query(models.Asset).all()
+        return [schemas.AssetOut.model_validate(a).model_dump() for a in assets]
+
+    return cached_json("assets:list", CACHE_TTL_ASSETS, produce)
 
 
 @app.get(
@@ -107,10 +183,20 @@ def list_findings(request: Request, asset_id: int, db: Session = Depends(get_db)
     asset = db.get(models.Asset, asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="Asset introuvable")
-    return db.query(models.Finding).filter_by(asset_id=asset_id).all()
+
+    def produce():
+        findings = (
+            db.query(models.Finding)
+            .filter_by(asset_id=asset_id)
+            .order_by(models.Finding.severity, models.Finding.id)
+            .all()
+        )
+        return [schemas.FindingOut.model_validate(f).model_dump() for f in findings]
+
+    return cached_json(f"findings:asset:{asset_id}", CACHE_TTL_FINDINGS, produce)
 
 
-MAX_REPORT_SIZE = 20 * 1024 * 1024
+# ---------------------------------------------------------------- scans
 
 
 @app.post(
@@ -139,13 +225,15 @@ async def ingest_scan(
     try:
         json.loads(content)
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Rapport JSON invalide")
+        raise HTTPException(status_code=400, detail="Rapport JSON invalide") from None
 
     asset = db.query(models.Asset).filter_by(name=asset_name).first()
+    asset_created = False
     if not asset:
         asset = models.Asset(name=asset_name, type=asset_type.value)
         db.add(asset)
         db.flush()
+        asset_created = True
 
     path = save_report(content, scanner.value)
 
@@ -158,6 +246,12 @@ async def ingest_scan(
     db.add(scan)
     db.commit()
     db.refresh(scan)
+
+    # L'invalidation intervient apres le commit : tant que la transaction n'est
+    # pas validee, une autre instance repeuplerait le cache avec l'ancien etat.
+    if asset_created:
+        invalidate("assets:*")
+    invalidate(f"findings:asset:{scan.asset_id}")
 
     ingest_queue.enqueue("app.jobs.process_scan", scan.id)
 

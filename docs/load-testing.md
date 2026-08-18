@@ -53,3 +53,39 @@ par 5,6 et que les erreurs disparaissent.
   Ce couplage manuel sera supprime a l'etape 7 par l'introduction de PgBouncer.
 - Aucun cache de lecture n'est en place.
 - L'instance applicative est unique : aucune tolerance a la panne.
+
+
+## Campagne 3 : cache Redis et PgBouncer
+
+| Métrique | Campagne 1 | Campagne 2 | Campagne 3 |
+| --- | --- | --- | --- |
+| Débit soutenu | 96 req/s | 542 req/s | 706 req/s |
+| Taux d'erreur | 14,66 % | 0,18 % | 0 % |
+| p95 | 10 s | 630 ms | 510 ms |
+| Latence maximale | 10 s | 6,94 s | 1,34 s |
+| Requêtes servies | 7 568 | 38 000 | 49 436 |
+
+Gain total depuis la configuration initiale : facteur 7,4 sur le débit, disparition
+complète des erreurs.
+
+La latence maximale est l'indicateur le plus significatif : elle passe de 10 s
+(timeout) à 1,34 s. La distribution des temps de réponse est resserrée, aucune
+requête ne subit d'attente pathologique.
+
+### Ce qui produit le gain
+
+| Mécanisme | Effet mesuré |
+| --- | --- |
+| Cache Redis, TTL 30 s | Supprime la quasi-totalité des accès base sur les lectures |
+| PgBouncer, mode transaction | 25 connexions PostgreSQL constantes quelle que soit la charge |
+| Pool applicatif réduit | 15 connexions par worker au lieu de 30, sans perte de capacité |
+
+Le pool applicatif a pu être divisé par deux tout en augmentant le débit : c'est
+PgBouncer qui absorbe désormais la concurrence, et non plus chaque instance.
+
+### Compromis assumés
+
+Le cache introduit une fenêtre d'obsolescence de 30 secondes sur la liste des
+assets et de 15 secondes sur les findings. Pour un outil de suivi de
+vulnérabilités, dont les données évoluent à l'échelle de la journée, ce délai est
+sans conséquence fonctionnelle. Les écritures invalident le cache immédiatement.

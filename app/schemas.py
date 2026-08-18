@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -60,8 +60,8 @@ class FindingOut(BaseModel):
     asset_id: int
     title: str
     severity: str
-    cve: Optional[str] = None
-    component: Optional[str] = None
+    cve: str | None = None
+    component: str | None = None
     status: str
     first_seen: datetime
     last_seen: datetime
@@ -79,9 +79,9 @@ class ScanOut(BaseModel):
     scanner: str
     status: str
     started_at: datetime
-    finished_at: Optional[datetime] = None
-    findings_count: Optional[int] = None
-    error_message: Optional[str] = None
+    finished_at: datetime | None = None
+    findings_count: int | None = None
+    error_message: str | None = None
 
 
 class IngestAccepted(BaseModel):

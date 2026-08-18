@@ -1,5 +1,6 @@
 import hmac
-from fastapi import Security, HTTPException, status
+
+from fastapi import HTTPException, Security, status
 from fastapi.security import APIKeyHeader
 
 from app.config import get_settings
