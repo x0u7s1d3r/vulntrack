@@ -302,6 +302,8 @@ Un replica qui échoue son healthcheck (`/health`) est retiré de la rotation pa
 
 **Limitation connue** : le tableau de bord Traefik (port 8090) tourne en mode `--api.insecure=true`, sans authentification. Acceptable en home-lab isolé, à ne jamais exposer tel quel sur un réseau non maîtrisé. Traefik a également besoin d'un accès en lecture au socket Docker (`/var/run/docker.sock`) pour découvrir les conteneurs `api` : c'est un accès équivalent à root sur l'hôte, un compromis assumé ici et documenté plutôt que caché — à durcir avec un proxy dédié (ex. `tecnativa/docker-socket-proxy`) avant tout déploiement au-delà du home-lab.
 
+**Piège rencontré en déploiement réel** : sur un moteur Docker récent (testé avec Docker Engine 29.x), Traefik échoue silencieusement à découvrir les conteneurs avec `Error response from daemon: client version 1.24 is too old`. Le client Docker embarqué par Traefik négocie par défaut à partir de l'API 1.24, que les moteurs récents rejettent avant même la négociation. Fixé en forçant `DOCKER_API_VERSION` dans l'environnement du service `traefik`. Si `curl http://localhost:8001/...` répond `404 page not found` (la page 404 de Traefik lui-même, pas celle de l'API), c'est le symptôme : vérifier `docker compose logs traefik`.
+
 ---
 
 ## Feuille de route

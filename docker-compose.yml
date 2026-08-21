@@ -41,6 +41,13 @@ services:
     image: traefik:v3.3
     container_name: vulntrack-traefik
     restart: unless-stopped
+    environment:
+      # Le client Docker embarque par Traefik negocie a partir de l'API
+      # 1.24 par defaut. Les moteurs Docker recents (>= ~25) refusent toute
+      # requete sous leur version minimale supportee avant meme de negocier
+      # ("client version 1.24 is too old"). On force donc explicitement une
+      # version recente plutot que de laisser le client echouer au demarrage.
+      DOCKER_API_VERSION: "1.44"
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
