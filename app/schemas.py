@@ -58,10 +58,15 @@ class FindingOut(BaseModel):
 
     id: int
     asset_id: int
+    scanner: str
     title: str
     severity: str
     cve: str | None = None
     component: str | None = None
+    rule_id: str | None = None
+    file_path: str | None = None
+    line_number: int | None = None
+    epss_score: float | None = None
     status: str
     first_seen: datetime
     last_seen: datetime
@@ -69,6 +74,8 @@ class FindingOut(BaseModel):
 
 class ScannerType(str, Enum):
     TRIVY = "trivy"
+    SEMGREP = "semgrep"
+    GITLEAKS = "gitleaks"
 
 
 class ScanOut(BaseModel):

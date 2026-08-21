@@ -18,8 +18,9 @@ VulnTrack transforme ce flux brut en findings uniques, priorisés et suivis dans
 
 ## Fonctionnalités
 
-- Ingestion de rapports multi-scanners au format JSON
-- Déduplication par empreinte SHA-256 (asset + CVE + composant)
+- Ingestion de rapports multi-scanners au format JSON : Trivy (SCA/images), Semgrep (SAST), Gitleaks (secrets)
+- Déduplication par empreinte SHA-256, scopée par scanner (CVE + composant pour Trivy, règle + emplacement dans le code pour Semgrep/Gitleaks)
+- Score EPSS (probabilité d'exploitation réelle, FIRST.org) sur les findings avec CVE, en complément de la sévérité CVSS
 - Suivi du cycle de vie : `open`, `in_progress`, `fixed`, `accepted`, `false_positive`
 - Détection automatique des vulnérabilités corrigées entre deux scans
 - Ingestion asynchrone via file de messages, conçue pour absorber les pics de charge
@@ -74,9 +75,16 @@ VulnTrack transforme ce flux brut en findings uniques, priorisés et suivis dans
 | --- | --- | --- |
 | `assets` | Élément surveillé (image, dépôt, URL) | `id`, `name`, `type`, `created_at` |
 | `scans` | Exécution d'un scanner sur un asset | `id`, `asset_id`, `scanner`, `status`, `started_at` |
-| `findings` | Vulnérabilité constatée | `id`, `asset_id`, `fingerprint`, `severity`, `cve`, `status`, `first_seen`, `last_seen` |
+| `findings` | Vulnérabilité constatée | `id`, `asset_id`, `scanner`, `fingerprint`, `severity`, `cve`, `component`, `rule_id`, `file_path`, `line_number`, `epss_score`, `status`, `first_seen`, `last_seen` |
 
-Le champ `fingerprint` est un hash SHA-256 de `asset + CVE + composant`. C'est lui qui permet de rescanner en continu sans créer de doublons : une vulnérabilité déjà connue voit simplement son `last_seen` mis à jour.
+Le champ `fingerprint` est un hash SHA-256 qui identifie une trouvaille de façon stable d'un scan à l'autre. Sa formule dépend du scanner :
+
+- **Trivy** : `asset + CVE + composant` (une vulnérabilité connue sur un package donné)
+- **Semgrep / Gitleaks** : `asset + scanner + règle + fichier + ligne` (une règle déclenchée à un endroit précis du code, il n'y a ni CVE ni composant)
+
+C'est cette empreinte qui permet de rescanner en continu sans créer de doublons : une trouvaille déjà connue voit simplement son `last_seen` mis à jour. La détection des findings corrigés (passage automatique à `fixed`) est elle aussi scopée par scanner : un scan Semgrep ne peut jamais marquer comme corrigée une vulnérabilité remontée par Trivy sur le même asset, et inversement.
+
+Pour Gitleaks, le secret détecté lui-même n'est jamais stocké : seuls la règle, le fichier et la ligne le sont. Un finding consultable par un rôle `viewer` ou `analyst` ne doit jamais exposer un credential en clair, même déjà compromis.
 
 ---
 
@@ -168,6 +176,15 @@ Lister les assets :
 Lister les findings d'un asset :
 
     curl http://localhost:8001/assets/1/findings -H "Authorization: Bearer $TOKEN"
+
+Ingérer un rapport de scan (clé d'API, pas de jeton JWT — voir [Authentification et rôles](#authentification-et-rôles)). Le champ `scanner` accepte `trivy`, `semgrep` ou `gitleaks` :
+
+    curl -X POST http://localhost:8001/scans/ingest \
+      -H "X-API-Key: $API_KEY" \
+      -F "asset_name=vulntrack-repo" \
+      -F "asset_type=repository" \
+      -F "scanner=semgrep" \
+      -F "report=@semgrep-report.json;type=application/json"
 
 ---
 
@@ -283,7 +300,7 @@ Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/l
 - [x] Première campagne de tests de charge
 - [x] Cache, pool de connexions, arrêt gracieux
 - [x] Comptes utilisateurs et rôles (RBAC)
-- [ ] Ingestion multi-scanner et score EPSS
+- [x] Ingestion multi-scanner (Trivy, Semgrep, Gitleaks) et score EPSS
 - [ ] Répartition de charge et réplicas
 - [ ] Supervision Prometheus et Grafana
 - [ ] Notifications (webhook/Slack) et sauvegarde documentée
@@ -301,15 +318,28 @@ Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/l
     │   ├── __init__.py
     │   ├── main.py          points d'entree HTTP
     │   ├── auth.py          JWT, hachage de mot de passe, RBAC
+    │   ├── config.py        variables d'environnement (pydantic-settings)
     │   ├── database.py      connexion et session PostgreSQL
     │   ├── models.py        tables SQLAlchemy
-    │   └── schemas.py       validation Pydantic
+    │   ├── schemas.py       validation Pydantic
+    │   ├── parsers.py       parseurs Trivy / Semgrep / Gitleaks
+    │   ├── epss.py          enrichissement EPSS (FIRST.org)
+    │   ├── jobs.py          traitement asynchrone d'un scan (worker)
+    │   ├── queue.py         file Redis / RQ
+    │   ├── storage.py       persistance des rapports bruts
+    │   ├── cache.py         cache Redis en lecture
+    │   ├── middleware.py    en-tetes de securite
+    │   └── security.py      cle d'API machine-a-machine
     ├── scripts/
     │   └── create_admin.py  creation du tout premier compte admin
     ├── tests/
     │   ├── __init__.py
+    │   ├── conftest.py
     │   ├── test_api.py
-    │   └── test_auth.py
+    │   ├── test_auth.py
+    │   ├── test_parsers.py
+    │   ├── test_epss.py
+    │   └── test_jobs.py
     ├── docs/
     ├── .env.example
     ├── .gitignore
