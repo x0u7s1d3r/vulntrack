@@ -54,6 +54,10 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS}
       ENVIRONMENT: ${ENVIRONMENT}
       REPORT_STORAGE_PATH: /data/reports
+      RATE_LIMIT_AUTH: ${RATE_LIMIT_AUTH}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
 
     ports:
       - "8001:8000"
@@ -86,6 +90,10 @@ services:
       REPORT_STORAGE_PATH: /data/reports
       API_KEYS: ${API_KEYS}
       ENVIRONMENT: ${ENVIRONMENT}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
+
     volumes:
       - vulntrack-reports:/data/reports
     depends_on:
