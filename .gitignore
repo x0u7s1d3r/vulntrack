@@ -6,3 +6,7 @@ __pycache__/
 .coverage
 htmlcov/
 alembic/versions/__pycache__/
+
+# Rapports de scan et patches locaux
+*.patch
+*-report.json
