@@ -38,16 +38,14 @@ services:
       - vulntrack-net
 
   traefik:
-    image: traefik:v3.3
+    # Version epinglee volontairement : traefik v3.3 fige en dur la version
+    # d'API de son client Docker (1.24) et l'API refuse alors de negocier
+    # avec un moteur recent ("client version 1.24 is too old"), rendant la
+    # decouverte des conteneurs muette. Les v3.7+ negocient correctement la
+    # version d'API. Ne pas retrograder sous v3.7 sur un Docker Engine recent.
+    image: traefik:v3.7.11
     container_name: vulntrack-traefik
     restart: unless-stopped
-    environment:
-      # Le client Docker embarque par Traefik negocie a partir de l'API
-      # 1.24 par defaut. Les moteurs Docker recents (>= ~25) refusent toute
-      # requete sous leur version minimale supportee avant meme de negocier
-      # ("client version 1.24 is too old"). On force donc explicitement une
-      # version recente plutot que de laisser le client echouer au demarrage.
-      DOCKER_API_VERSION: "1.44"
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
@@ -109,6 +107,15 @@ services:
       # sans intervention manuelle, c'est le coeur de la haute disponibilite.
       - "traefik.http.services.api.loadbalancer.healthcheck.path=/health"
       - "traefik.http.services.api.loadbalancer.healthcheck.interval=10s"
+      # Retry : entre le crash d'un replica et sa detection par le
+      # healthcheck (jusqu'a 10s), une requete peut encore lui etre routee
+      # et tomber sur un refus de connexion. Le middleware la rejoue alors
+      # sur un autre replica au lieu de renvoyer une 502/504 au client.
+      # Traefik ne rejoue que si aucune reponse n'a encore ete emise : pas
+      # de risque de double execution cote serveur.
+      - "traefik.http.routers.api.middlewares=api-retry"
+      - "traefik.http.middlewares.api-retry.retry.attempts=3"
+      - "traefik.http.middlewares.api-retry.retry.initialinterval=100ms"
     depends_on:
       pgbouncer:
         condition: service_healthy
