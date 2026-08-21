@@ -156,6 +156,12 @@ services:
       # scrape par Prometheus. Le worker est mono-process, pas de mode
       # multi-process ici (donc pas de PROMETHEUS_MULTIPROC_DIR).
       WORKER_METRICS_PORT: "9100"
+      # Notifications (etape 12) : le worker alerte quand un scan produit de
+      # nouveaux findings au moins aussi graves que NOTIFY_MIN_SEVERITY.
+      # Vides = aucune notification (voir README, section Notifications).
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
+      NOTIFY_MIN_SEVERITY: ${NOTIFY_MIN_SEVERITY:-high}
     volumes:
       - vulntrack-reports:/data/reports
     depends_on:

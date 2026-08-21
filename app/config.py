@@ -25,6 +25,14 @@ class Settings(BaseSettings):
 
     report_storage_path: str = "/data/reports"
 
+    # Notifications (etape 12). Vides par defaut : aucune notification n'est
+    # envoyee tant qu'aucune URL n'est configuree. Le worker alerte quand un
+    # scan produit de nouveaux findings de severite >= notify_min_severity.
+    slack_webhook_url: str = ""
+    notify_webhook_url: str = ""
+    notify_min_severity: str = "high"
+    notify_timeout_seconds: int = 5
+
     @property
     def api_key_list(self) -> list[str]:
         return [k.strip() for k in self.api_keys.split(",") if k.strip()]

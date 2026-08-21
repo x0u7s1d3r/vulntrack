@@ -1,10 +1,13 @@
 import json
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 
+from app.config import get_settings
 from app.database import SessionLocal
 from app.epss import fetch_epss_scores
 from app.models import Asset, Finding, Scan
+from app.notifications import meets_threshold, send_scan_notification
 from app.parsers import get_parser
 from app.storage import load_report
 
@@ -38,6 +41,9 @@ def process_scan(scan_id: int) -> dict:
             # Findings avec CVE, cree(e)s ou mis a jour dans ce scan : cible
             # de l'enrichissement EPSS une fois la boucle terminee.
             findings_with_cve = []
+            # Severites des findings NOUVEAUX (jamais vus) : sert a decider
+            # d'envoyer une notification en fin de traitement.
+            new_severities: Counter = Counter()
 
             for parsed in parser(report):
                 fingerprint = Finding.make_fingerprint(
@@ -81,6 +87,7 @@ def process_scan(scan_id: int) -> dict:
                     )
                     db.add(finding)
                     created += 1
+                    new_severities[parsed["severity"]] += 1
                     if parsed["cve"]:
                         findings_with_cve.append(finding)
 
@@ -126,12 +133,20 @@ def process_scan(scan_id: int) -> dict:
             scan.status = "completed"
             scan.finished_at = utcnow()
             scan.findings_count = created + updated
+            # Capture avant commit : apres, l'objet peut etre detache/expire.
+            asset_name = asset.name
+            scanner_name = scan.scanner
             db.commit()
 
             logger.info(
                 "Scan %s termine: %s nouveaux, %s mis a jour, %s corriges",
                 scan_id, created, updated, fixed,
             )
+
+            # Notification hors transaction : best-effort, ne doit jamais
+            # faire echouer un scan deja committe avec succes.
+            _maybe_notify(scan_id, asset_name, scanner_name, new_severities)
+
             return {
                 "status": "completed",
                 "created": created,
@@ -151,3 +166,30 @@ def process_scan(scan_id: int) -> dict:
 
     finally:
         db.close()
+
+
+def _maybe_notify(scan_id, asset_name, scanner, new_severities) -> None:
+    """Envoie une notification si le scan a produit de nouveaux findings au
+    moins aussi graves que le seuil configure. Entierement best-effort :
+    toute erreur est journalisee sans jamais se propager."""
+    try:
+        threshold = get_settings().notify_min_severity
+        at_threshold = {
+            sev: n for sev, n in new_severities.items() if meets_threshold(sev, threshold)
+        }
+        if not at_threshold:
+            return
+
+        send_scan_notification(
+            {
+                "scan_id": scan_id,
+                "asset_name": asset_name,
+                "scanner": scanner,
+                "threshold": threshold,
+                "new_by_severity": at_threshold,
+            }
+        )
+    except Exception:
+        logger.warning(
+            "Notification impossible pour le scan %s", scan_id, exc_info=True
+        )

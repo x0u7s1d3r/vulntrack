@@ -28,6 +28,8 @@ VulnTrack transforme ce flux brut en findings uniques, priorisés et suivis dans
 - Authentification par clé d'API (ingestion machine-à-machine) et par comptes utilisateurs JWT avec rôles (admin / analyst / viewer)
 - Limitation de débit par client
 - Observabilité : métriques RED et métier au format Prometheus, tableau de bord Grafana provisionné
+- Notifications Slack / webhook sur les nouveaux findings au-dessus d'un seuil de sévérité
+- Sauvegarde et restauration scriptées et documentées
 
 ---
 
@@ -335,6 +337,32 @@ Le tableau de bord couvre : débit par classe de statut, taux d'erreur 5xx, late
 
 ---
 
+## Notifications
+
+Quand un scan produit de **nouveaux** findings au moins aussi graves qu'un seuil configurable, le worker envoie une alerte. Deux canaux indépendants et optionnels :
+
+| Canal | Variable | Format |
+| --- | --- | --- |
+| Slack | `SLACK_WEBHOOK_URL` | message texte (webhook entrant Slack) |
+| Webhook générique | `NOTIFY_WEBHOOK_URL` | `POST` JSON du résumé brut, pour brancher n'importe quel outil |
+
+Le seuil se règle via `NOTIFY_MIN_SEVERITY` (défaut `high` : n'alerte que sur `critical` et `high`). Sans URL configurée, aucune notification n'est envoyée et aucun appel réseau n'est fait.
+
+L'envoi est **best-effort** : il part du worker, après que le scan est déjà enregistré en base, et un échec (réseau, URL invalide) est journalisé sans jamais faire échouer le scan. Une notification perdue est moins grave qu'un scan perdu. Les deux canaux sont indépendants : si Slack tombe, le webhook générique est quand même tenté.
+
+Seuls les **nouveaux** findings déclenchent une alerte, pas ceux déjà connus revus au scan suivant — sinon chaque rescan renverrait le même bruit.
+
+## Sauvegarde et restauration
+
+Le seul état critique est la base PostgreSQL. Deux scripts opèrent directement sur le conteneur `db`, sans client PostgreSQL sur l'hôte :
+
+    ./scripts/backup.sh                                   # dump horodaté dans backups/
+    ./scripts/restore.sh backups/vulntrack-<date>.dump    # restauration (avec confirmation)
+
+La procédure complète — automatisation par cron, **test de bout en bout** (sauvegarder → simuler une perte → restaurer → vérifier), et ce qui n'est pas couvert — est documentée dans [`docs/backup-restore.md`](docs/backup-restore.md). Une sauvegarde jamais restaurée n'en est pas une : le test de restauration fait partie de la procédure.
+
+---
+
 ## Feuille de route
 
 - [x] Squelette de l'API et modèle de données
@@ -348,7 +376,7 @@ Le tableau de bord couvre : débit par classe de statut, taux d'erreur 5xx, late
 - [x] Ingestion multi-scanner (Trivy, Semgrep, Gitleaks) et score EPSS
 - [x] Répartition de charge et réplicas
 - [x] Supervision Prometheus et Grafana
-- [ ] Notifications (webhook/Slack) et sauvegarde documentée
+- [x] Notifications (webhook/Slack) et sauvegarde documentée
 - [ ] Frontend simple
 - [ ] Pipeline d'intégration continue et gates de sécurité
 - [ ] Documentation finale et section limitations connues
@@ -376,14 +404,17 @@ Le tableau de bord couvre : débit par classe de statut, taux d'erreur 5xx, late
     │   ├── middleware.py    en-tetes de securite
     │   ├── security.py      cle d'API machine-a-machine
     │   ├── metrics.py       metriques RED (Prometheus, multi-process)
-    │   └── metrics_state.py jauges d'etat metier (exposees par le worker)
+    │   ├── metrics_state.py jauges d'etat metier (exposees par le worker)
+    │   └── notifications.py alertes Slack / webhook sur nouveaux findings
     ├── observability/
     │   ├── prometheus.yml   configuration de collecte
     │   └── grafana/
     │       ├── provisioning/  datasource + provider de dashboards
     │       └── dashboards/    tableau de bord VulnTrack (JSON versionne)
     ├── scripts/
-    │   └── create_admin.py  creation du tout premier compte admin
+    │   ├── create_admin.py  creation du tout premier compte admin
+    │   ├── backup.sh        sauvegarde de la base (pg_dump)
+    │   └── restore.sh       restauration depuis une sauvegarde
     ├── tests/
     │   ├── __init__.py
     │   ├── conftest.py
@@ -393,8 +424,10 @@ Le tableau de bord couvre : débit par classe de statut, taux d'erreur 5xx, late
     │   ├── test_epss.py
     │   ├── test_jobs.py
     │   ├── test_security.py
-    │   └── test_metrics.py
+    │   ├── test_metrics.py
+    │   └── test_notifications.py
     ├── docs/
+    │   └── backup-restore.md  procedure de sauvegarde/restauration
     ├── worker.py            worker RQ + serveur de metriques d'etat
     ├── .env.example
     ├── .gitignore

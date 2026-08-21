@@ -10,3 +10,6 @@ alembic/versions/__pycache__/
 # Rapports de scan et patches locaux
 *.patch
 *-report.json
+
+# Sauvegardes de base de donnees
+backups/
