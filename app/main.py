@@ -17,7 +17,6 @@ from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -33,7 +32,7 @@ from app.config import get_settings
 from app.database import get_db
 from app.middleware import SecurityHeadersMiddleware
 from app.queue import ingest_queue
-from app.security import require_api_key
+from app.security import get_client_ip, require_api_key
 from app.storage import save_report
 
 logging.basicConfig(
@@ -48,7 +47,7 @@ CACHE_TTL_ASSETS = 30
 CACHE_TTL_FINDINGS = 15
 MAX_REPORT_SIZE = 20 * 1024 * 1024
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_client_ip)
 
 
 @asynccontextmanager

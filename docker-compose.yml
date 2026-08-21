@@ -37,12 +37,39 @@ services:
     networks:
       - vulntrack-net
 
+  traefik:
+    image: traefik:v3.3
+    container_name: vulntrack-traefik
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--api.dashboard=true"
+      # Tableau de bord sans authentification : usage home-lab uniquement.
+      # A ne jamais exposer ainsi sur un reseau non maitrise (voir README,
+      # section Haute disponibilite / limitations connues).
+      - "--api.insecure=true"
+    ports:
+      - "8001:80"
+      - "8090:8080"
+    volumes:
+      # Necessaire pour que Traefik decouvre les conteneurs api via leurs
+      # labels. Un socket Docker monte dans un conteneur equivaut a un acces
+      # root sur l'hote : compromis assume pour un home-lab, a durcir avec
+      # un proxy comme tecnativa/docker-socket-proxy avant toute prod reelle.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - vulntrack-net
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
     image: vulntrack-api:0.5.0
-    container_name: vulntrack-api
+    # Pas de container_name : un nom fixe empeche `docker compose up --scale
+    # api=N` de creer plusieurs replicas (deux conteneurs ne peuvent pas
+    # porter le meme nom).
     stop_grace_period: 30s
     restart: unless-stopped
     environment:
@@ -58,9 +85,23 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: ${JWT_ALGORITHM}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
-
-    ports:
-      - "8001:8000"
+      # Repartis entre les replicas par Traefik : chaque conteneur peut donc
+      # tourner avec moins de workers uvicorn que l'instance unique d'avant
+      # (etape 6-7) tout en offrant une capacite totale au moins equivalente.
+      # A ajuster selon le nombre de vCPU reellement disponibles sur la VM.
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+    # Pas de "ports:" ici : seul Traefik est expose sur l'hote. Les
+    # conteneurs api restent joignables en interne via le reseau Docker
+    # (EXPOSE 8000 dans le Dockerfile), ce que Traefik utilise directement.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+      # Healthcheck actif : un replica qui echoue est retire de la rotation
+      # sans intervention manuelle, c'est le coeur de la haute disponibilite.
+      - "traefik.http.services.api.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.api.loadbalancer.healthcheck.interval=10s"
     depends_on:
       pgbouncer:
         condition: service_healthy

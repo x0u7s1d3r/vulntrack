@@ -37,4 +37,9 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header", "--workers", "4", "--timeout-graceful-shutdown", "20"]
+# Forme shell + exec (pas la forme exec-array) pour permettre la
+# substitution de UVICORN_WORKERS par le nombre de replicas voulu (voir
+# docker-compose.yml, etape 10 - haute disponibilite). `exec` est essentiel :
+# sans lui, ce serait le shell qui recevrait SIGTERM en PID 1, pas uvicorn,
+# et l'arret gracieux de l'etape 7 cesserait de fonctionner silencieusement.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers ${UVICORN_WORKERS:-4} --timeout-graceful-shutdown 20"]

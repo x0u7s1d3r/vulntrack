@@ -131,12 +131,14 @@ Documentation interactive : http://localhost:8001/docs
 
 | Service | Port hôte | Port conteneur |
 | --- | --- | --- |
-| API VulnTrack | 8001 | 8000 |
+| Traefik (entrée principale, répartit vers les replicas api) | 8001 | 80 |
 | PostgreSQL | 5433 | 5432 |
 | Redis | 6380 | 6379 |
 | Prometheus | 9091 | 9090 |
 | Grafana | 3001 | 3000 |
-| Traefik (dashboard) | 8090 | 8080 |
+| Traefik (dashboard, sans authentification — usage home-lab uniquement) | 8090 | 8080 |
+
+Depuis l'étape 10 (haute disponibilité), l'API n'est plus publiée directement sur l'hôte : `docker-compose.yml` ne mappe plus `8001:8000` sur le service `api`. Tout le trafic passe par Traefik, seul point d'entrée du réseau, qui répartit vers les instances `api` disponibles.
 
 ---
 
@@ -146,6 +148,7 @@ Documentation interactive : http://localhost:8001/docs
 | --- | --- | --- |
 | `APP_PORT` | Port d'écoute de l'API | `8001` |
 | `DATABASE_URL` | Chaîne de connexion PostgreSQL | `postgresql://user:password@localhost:5433/vulntrack` |
+| `UVICORN_WORKERS` | Workers uvicorn par instance `api` (voir [Répartition de charge](#répartition-de-charge-et-réplicas)) | `2` |
 
 Le fichier `.env` n'est jamais versionné. Le fichier `.env.example` documente les variables attendues sans exposer de valeur réelle.
 
@@ -278,15 +281,26 @@ L'architecture est conçue pour rester disponible sous forte charge.
 | Mécanisme | Problème traité |
 | --- | --- |
 | API sans état | Permet de multiplier les instances à l'identique |
-| Répartition de charge Traefik | Distribue le trafic et écarte les instances défaillantes |
+| Répartition de charge Traefik | Distribue le trafic et écarte automatiquement les instances défaillantes (healthcheck actif sur `/health`) |
 | Ingestion asynchrone via Redis | Les pics de trafic remplissent la file au lieu de saturer l'API |
 | Pool de connexions PgBouncer | Évite l'épuisement des connexions PostgreSQL |
 | Cache Redis sur les lectures | Décharge la base sur les endpoints les plus sollicités |
-| Sondes de vivacité et de disponibilité | Permettent à l'orchestrateur de router uniquement vers les instances prêtes |
-| Limites de ressources et autoscaling | Ajoute des réplicas automatiquement selon la charge |
+| Sondes de vivacité et de disponibilité | Permettent à Traefik de router uniquement vers les instances prêtes |
 | Arrêt gracieux | Aucune requête perdue pendant un déploiement |
 
 Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/load-testing.md`.
+
+### Répartition de charge et réplicas
+
+Traefik répartit le trafic entre toutes les instances `api` en cours d'exécution. Pour en lancer plusieurs :
+
+    docker compose up -d --scale api=3
+
+Chaque instance tourne avec `UVICORN_WORKERS` workers uvicorn (`2` par défaut, réglable dans `.env`) : avec 3 replicas à 2 workers, la capacité totale (6 workers) dépasse déjà l'instance unique à 4 workers de l'étape 6-7. Ajuster `UVICORN_WORKERS` et le nombre de replicas selon le nombre de vCPU réellement disponibles sur la VM plutôt que de les augmenter aveuglément.
+
+Un replica qui échoue son healthcheck (`/health`) est retiré de la rotation par Traefik sans intervention manuelle — c'est ce qui transforme "plusieurs instances" en "haute disponibilité" : tuer un conteneur `api` à la main pendant que le trafic continue est le test le plus parlant.
+
+**Limitation connue** : le tableau de bord Traefik (port 8090) tourne en mode `--api.insecure=true`, sans authentification. Acceptable en home-lab isolé, à ne jamais exposer tel quel sur un réseau non maîtrisé. Traefik a également besoin d'un accès en lecture au socket Docker (`/var/run/docker.sock`) pour découvrir les conteneurs `api` : c'est un accès équivalent à root sur l'hôte, un compromis assumé ici et documenté plutôt que caché — à durcir avec un proxy dédié (ex. `tecnativa/docker-socket-proxy`) avant tout déploiement au-delà du home-lab.
 
 ---
 
@@ -301,7 +315,7 @@ Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/l
 - [x] Cache, pool de connexions, arrêt gracieux
 - [x] Comptes utilisateurs et rôles (RBAC)
 - [x] Ingestion multi-scanner (Trivy, Semgrep, Gitleaks) et score EPSS
-- [ ] Répartition de charge et réplicas
+- [x] Répartition de charge et réplicas
 - [ ] Supervision Prometheus et Grafana
 - [ ] Notifications (webhook/Slack) et sauvegarde documentée
 - [ ] Frontend simple
@@ -339,7 +353,8 @@ Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/l
     │   ├── test_auth.py
     │   ├── test_parsers.py
     │   ├── test_epss.py
-    │   └── test_jobs.py
+    │   ├── test_jobs.py
+    │   └── test_security.py
     ├── docs/
     ├── .env.example
     ├── .gitignore
@@ -351,5 +366,3 @@ Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/l
 ## Licence
 
 MIT
-
-| 4 | Rate limiting basé sur l'IP source directe | Inopérant derrière un load balancer, toutes les requêtes semblent venir de la même IP | Étape 8 : prise en compte de X-Forwarded-For |
