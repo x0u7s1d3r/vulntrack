@@ -27,7 +27,7 @@ VulnTrack transforme ce flux brut en findings uniques, priorisés et suivis dans
 - API REST documentée automatiquement (OpenAPI / Swagger)
 - Authentification par clé d'API (ingestion machine-à-machine) et par comptes utilisateurs JWT avec rôles (admin / analyst / viewer)
 - Limitation de débit par client
-- Métriques exposées au format Prometheus
+- Observabilité : métriques RED et métier au format Prometheus, tableau de bord Grafana provisionné
 
 ---
 
@@ -308,6 +308,33 @@ Entre l'instant où un replica meurt et sa détection par le healthcheck (jusqu'
 
 ---
 
+## Observabilité
+
+L'observabilité repose sur les métriques RED (Rate, Errors, Duration), complétées par des métriques métier. Prometheus collecte, Grafana affiche un tableau de bord provisionné en code.
+
+**Où sont exposées les métriques**
+
+| Source | Métriques | Endpoint |
+| --- | --- | --- |
+| API (chaque replica) | RED : `vulntrack_http_requests_total`, `vulntrack_http_request_duration_seconds` | `/metrics` sur le port interne 8000 |
+| Worker | État métier : `vulntrack_ingest_queue_depth`, `vulntrack_findings{severity,status}` | serveur dédié, port 9100 |
+
+Les métriques métier sont des jauges calculées à la volée au moment du scrape (état courant de la file et des findings), pas des compteurs incrémentés dans le code.
+
+**Le piège du multi-process.** Chaque conteneur `api` fait tourner plusieurs workers uvicorn, c'est-à-dire plusieurs processus derrière un seul port. Un scrape Prometheus tomberait sur un worker au hasard et ne verrait que ses compteurs — des métriques fausses et sous-comptées. La parade est le mode multi-process de `prometheus_client` : chaque worker écrit ses métriques dans un répertoire partagé (`PROMETHEUS_MULTIPROC_DIR`), et l'endpoint `/metrics` les agrège à la lecture. Le répertoire est vidé au démarrage du conteneur pour ne pas agréger les fichiers d'une exécution précédente. Le worker, lui, est mono-process : pas de cette complexité, un simple serveur de métriques.
+
+**Découverte des replicas.** Prometheus ne connaît pas à l'avance le nombre de replicas `api`. Il les découvre via le DNS interne de Docker Compose (`dns_sd_configs` sur le nom de service `api`, qui résout vers toutes les IP des replicas) — sans avoir besoin du socket Docker cette fois. Quand on scale l'API, les nouveaux replicas sont scrapés au cycle suivant sans reconfiguration.
+
+**Accès**
+
+Grafana est disponible sur `http://localhost:3001` (identifiants par défaut `admin` / `admin`, à changer via `GRAFANA_USER` / `GRAFANA_PASSWORD`). La datasource Prometheus et le tableau de bord sont provisionnés automatiquement depuis `observability/grafana/` : rien à configurer à la main. Prometheus est sur `http://localhost:9091`.
+
+Le tableau de bord couvre : débit par classe de statut, taux d'erreur 5xx, latence p50/p95/p99, débit par route, profondeur de la file d'ingestion, et répartition des findings par sévérité et par statut.
+
+**Limitation connue** : l'endpoint `/metrics` n'est pas authentifié — il est scrapé sur le réseau interne et ne doit jamais être exposé publiquement via Traefik en production (à bloquer au niveau du reverse proxy ou à protéger). Les identifiants Grafana par défaut sont ceux d'un home-lab et doivent être changés avant toute exposition.
+
+---
+
 ## Feuille de route
 
 - [x] Squelette de l'API et modèle de données
@@ -320,7 +347,7 @@ Entre l'instant où un replica meurt et sa détection par le healthcheck (jusqu'
 - [x] Comptes utilisateurs et rôles (RBAC)
 - [x] Ingestion multi-scanner (Trivy, Semgrep, Gitleaks) et score EPSS
 - [x] Répartition de charge et réplicas
-- [ ] Supervision Prometheus et Grafana
+- [x] Supervision Prometheus et Grafana
 - [ ] Notifications (webhook/Slack) et sauvegarde documentée
 - [ ] Frontend simple
 - [ ] Pipeline d'intégration continue et gates de sécurité
@@ -347,7 +374,14 @@ Entre l'instant où un replica meurt et sa détection par le healthcheck (jusqu'
     │   ├── storage.py       persistance des rapports bruts
     │   ├── cache.py         cache Redis en lecture
     │   ├── middleware.py    en-tetes de securite
-    │   └── security.py      cle d'API machine-a-machine
+    │   ├── security.py      cle d'API machine-a-machine
+    │   ├── metrics.py       metriques RED (Prometheus, multi-process)
+    │   └── metrics_state.py jauges d'etat metier (exposees par le worker)
+    ├── observability/
+    │   ├── prometheus.yml   configuration de collecte
+    │   └── grafana/
+    │       ├── provisioning/  datasource + provider de dashboards
+    │       └── dashboards/    tableau de bord VulnTrack (JSON versionne)
     ├── scripts/
     │   └── create_admin.py  creation du tout premier compte admin
     ├── tests/
@@ -358,8 +392,10 @@ Entre l'instant où un replica meurt et sa détection par le healthcheck (jusqu'
     │   ├── test_parsers.py
     │   ├── test_epss.py
     │   ├── test_jobs.py
-    │   └── test_security.py
+    │   ├── test_security.py
+    │   └── test_metrics.py
     ├── docs/
+    ├── worker.py            worker RQ + serveur de metriques d'etat
     ├── .env.example
     ├── .gitignore
     ├── requirements.txt

@@ -13,7 +13,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -30,6 +30,7 @@ from app.auth import (
 from app.cache import cached_json, invalidate
 from app.config import get_settings
 from app.database import get_db
+from app.metrics import MetricsMiddleware, render_metrics
 from app.middleware import SecurityHeadersMiddleware
 from app.queue import ingest_queue
 from app.security import get_client_ip, require_api_key
@@ -71,6 +72,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(MetricsMiddleware)
 
 if settings.cors_origin_list:
     app.add_middleware(
@@ -135,6 +137,19 @@ def ready(request: Request, db: Session = Depends(get_db)):
         )
 
     return {"status": "ready", "checks": checks}
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics(request: Request):
+    """Metriques RED au format Prometheus.
+
+    Volontairement non authentifie : scrape par Prometheus sur le reseau
+    interne (jamais expose publiquement via Traefik en production ; voir la
+    section Observabilite du README pour le durcissement). Exclu du schema
+    OpenAPI et non compte dans ses propres metriques.
+    """
+    data, content_type = render_metrics()
+    return Response(content=data, media_type=content_type)
 
 
 # ---------------------------------------------------------------- authentification

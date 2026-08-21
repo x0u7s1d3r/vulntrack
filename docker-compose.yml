@@ -95,6 +95,10 @@ services:
       # (etape 6-7) tout en offrant une capacite totale au moins equivalente.
       # A ajuster selon le nombre de vCPU reellement disponibles sur la VM.
       UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      # Active le mode multi-process de prometheus_client : les workers
+      # uvicorn agregent leurs metriques via ce repertoire (voir app/metrics.py
+      # et Dockerfile). Repertoire local et ephemere, vide au demarrage.
+      PROMETHEUS_MULTIPROC_DIR: /data/prometheus
     # Pas de "ports:" ici : seul Traefik est expose sur l'hote. Les
     # conteneurs api restent joignables en interne via le reseau Docker
     # (EXPOSE 8000 dans le Dockerfile), ce que Traefik utilise directement.
@@ -148,7 +152,10 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: ${JWT_ALGORITHM}
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
-
+      # Port du serveur de metriques d'etat metier expose par le worker,
+      # scrape par Prometheus. Le worker est mono-process, pas de mode
+      # multi-process ici (donc pas de PROMETHEUS_MULTIPROC_DIR).
+      WORKER_METRICS_PORT: "9100"
     volumes:
       - vulntrack-reports:/data/reports
     depends_on:
@@ -156,6 +163,46 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - vulntrack-net
+
+  prometheus:
+    image: prom/prometheus:v3.6.0
+    container_name: vulntrack-prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - vulntrack-prometheus-data:/prometheus
+    ports:
+      - "9091:9090"
+    depends_on:
+      - worker
+    networks:
+      - vulntrack-net
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    container_name: vulntrack-grafana
+    restart: unless-stopped
+    environment:
+      # Identifiants admin de dev. A changer imperativement avant toute
+      # exposition reelle (voir README, section Observabilite).
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      # Datasource et dashboard sont provisionnes en code (voir
+      # observability/grafana/) : rien a configurer a la main dans l'UI.
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - vulntrack-grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
     networks:
       - vulntrack-net
 
@@ -188,6 +235,8 @@ volumes:
   vulntrack-data:
   vulntrack-redis-data:
   vulntrack-reports:
+  vulntrack-prometheus-data:
+  vulntrack-grafana-data:
 
 networks:
   vulntrack-net:

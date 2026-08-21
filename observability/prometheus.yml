@@ -1,0 +1,26 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  # Replicas de l'API. Decouverts via le DNS interne de Docker Compose : le
+  # nom de service "api" resout vers toutes les IP des replicas en cours
+  # d'execution (une reponse DNS avec un enregistrement A par conteneur).
+  # Pas besoin du socket Docker : quand on scale api, Prometheus voit les
+  # nouveaux replicas au scrape suivant sans reconfiguration.
+  - job_name: vulntrack-api
+    dns_sd_configs:
+      - names: ["api"]
+        type: A
+        port: 8000
+    metrics_path: /metrics
+
+  # Metriques d'etat metier, exposees par le worker (processus unique).
+  - job_name: vulntrack-worker
+    static_configs:
+      - targets: ["worker:9100"]
+
+  # Prometheus se surveille lui-meme.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
