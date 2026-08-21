@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     api_keys: str = ""
     rate_limit_default: str = "100/minute"
     rate_limit_write: str = "20/minute"
+    rate_limit_auth: str = "10/minute"
+
+    # Cle de signature des JWT utilisateur. Doit etre longue et aleatoire en
+    # production (ex: openssl rand -hex 32), distincte des cles d'API machine.
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 30
 
     cors_origins: str = ""
     environment: str = "development"

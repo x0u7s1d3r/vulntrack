@@ -14,12 +14,20 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.auth import (
+    create_access_token,
+    get_current_user,
+    hash_password,
+    require_role,
+    verify_password,
+)
 from app.cache import cached_json, invalidate
 from app.config import get_settings
 from app.database import get_db
@@ -71,7 +79,7 @@ if settings.cors_origin_list:
         allow_origins=settings.cors_origin_list,
         allow_credentials=True,
         allow_methods=["GET", "POST"],
-        allow_headers=["X-API-Key", "Content-Type"],
+        allow_headers=["X-API-Key", "Authorization", "Content-Type"],
     )
 
 
@@ -130,6 +138,76 @@ def ready(request: Request, db: Session = Depends(get_db)):
     return {"status": "ready", "checks": checks}
 
 
+# ---------------------------------------------------------------- authentification
+
+
+@app.post("/auth/login", response_model=schemas.Token)
+@limiter.limit(settings.rate_limit_auth)
+def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    """Connexion utilisateur : identifiants -> jeton JWT.
+
+    Distinct de la cle d'API (X-API-Key), qui reste reservee a l'ingestion
+    machine-a-machine sur /scans/ingest.
+    """
+    user = db.query(models.User).filter_by(username=form_data.username).first()
+
+    if not user or not user.is_active or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Identifiants invalides",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = create_access_token(subject=user.username, role=user.role)
+    logger.info("Connexion reussie: %s", user.username)
+    return schemas.Token(access_token=token)
+
+
+@app.post(
+    "/users",
+    response_model=schemas.UserOut,
+    status_code=201,
+    dependencies=[Depends(require_role("admin"))],
+)
+@limiter.limit(settings.rate_limit_write)
+def create_user(
+    request: Request,
+    payload: schemas.UserCreate,
+    db: Session = Depends(get_db),
+):
+    """Creation d'un compte utilisateur. Reserve aux admins : pas d'auto-
+    inscription sur un outil de suivi de vulnerabilites."""
+    existing = db.query(models.User).filter_by(username=payload.username).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Utilisateur deja existant")
+
+    user = models.User(
+        username=payload.username,
+        hashed_password=hash_password(payload.password),
+        role=payload.role.value,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    logger.info("Utilisateur cree: %s (role=%s)", user.username, user.role)
+    return user
+
+
+@app.get(
+    "/users",
+    response_model=list[schemas.UserOut],
+    dependencies=[Depends(require_role("admin"))],
+)
+@limiter.limit(settings.rate_limit_default)
+def list_users(request: Request, db: Session = Depends(get_db)):
+    return db.query(models.User).all()
+
+
 # ---------------------------------------------------------------- assets
 
 
@@ -137,7 +215,7 @@ def ready(request: Request, db: Session = Depends(get_db)):
     "/assets",
     response_model=schemas.AssetOut,
     status_code=201,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_role("admin", "analyst"))],
 )
 @limiter.limit(settings.rate_limit_write)
 def create_asset(
@@ -162,7 +240,7 @@ def create_asset(
 @app.get(
     "/assets",
     response_model=list[schemas.AssetOut],
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_current_user)],
 )
 @limiter.limit(settings.rate_limit_default)
 def list_assets(request: Request, db: Session = Depends(get_db)):
@@ -176,7 +254,7 @@ def list_assets(request: Request, db: Session = Depends(get_db)):
 @app.get(
     "/assets/{asset_id}/findings",
     response_model=list[schemas.FindingOut],
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_current_user)],
 )
 @limiter.limit(settings.rate_limit_default)
 def list_findings(request: Request, asset_id: int, db: Session = Depends(get_db)):
@@ -267,7 +345,7 @@ async def ingest_scan(
 @app.get(
     "/scans/{scan_id}",
     response_model=schemas.ScanOut,
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_current_user)],
 )
 @limiter.limit(settings.rate_limit_default)
 def get_scan(request: Request, scan_id: int, db: Session = Depends(get_db)):

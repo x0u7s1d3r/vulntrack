@@ -24,7 +24,8 @@ VulnTrack transforme ce flux brut en findings uniques, priorisés et suivis dans
 - Détection automatique des vulnérabilités corrigées entre deux scans
 - Ingestion asynchrone via file de messages, conçue pour absorber les pics de charge
 - API REST documentée automatiquement (OpenAPI / Swagger)
-- Authentification par clé d'API et limitation de débit
+- Authentification par clé d'API (ingestion machine-à-machine) et par comptes utilisateurs JWT avec rôles (admin / analyst / viewer)
+- Limitation de débit par client
 - Métriques exposées au format Prometheus
 
 ---
@@ -148,30 +149,69 @@ Vérifier que l'API répond :
 
     curl http://localhost:8001/health
 
-Créer un asset :
+Se connecter et récupérer un jeton (voir [Authentification et rôles](#authentification-et-rôles) pour créer le premier compte) :
+
+    TOKEN=$(curl -s -X POST http://localhost:8001/auth/login \
+      -d "username=amiir&password=un-mot-de-passe-solide" | jq -r .access_token)
+
+Créer un asset (rôle `admin` ou `analyst`) :
 
     curl -X POST http://localhost:8001/assets \
+      -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
       -d '{"name":"nginx:1.25-alpine","type":"image"}'
 
 Lister les assets :
 
-    curl http://localhost:8001/assets
+    curl http://localhost:8001/assets -H "Authorization: Bearer $TOKEN"
 
 Lister les findings d'un asset :
 
-    curl http://localhost:8001/assets/1/findings
+    curl http://localhost:8001/assets/1/findings -H "Authorization: Bearer $TOKEN"
 
 ---
 
 ## Endpoints
 
-| Méthode | Route | Description |
-| --- | --- | --- |
-| `GET` | `/health` | État de santé du service |
-| `POST` | `/assets` | Créer un asset |
-| `GET` | `/assets` | Lister les assets |
-| `GET` | `/assets/{id}/findings` | Lister les findings d'un asset |
+| Méthode | Route | Description | Authentification |
+| --- | --- | --- | --- |
+| `GET` | `/health` | État de santé du service | Aucune |
+| `GET` | `/ready` | Sonde de disponibilité (dépendances) | Aucune |
+| `POST` | `/auth/login` | Connexion, retourne un jeton JWT | Identifiants |
+| `POST` | `/users` | Créer un compte utilisateur | JWT, rôle admin |
+| `GET` | `/users` | Lister les comptes utilisateurs | JWT, rôle admin |
+| `POST` | `/assets` | Créer un asset | JWT, rôle admin ou analyst |
+| `GET` | `/assets` | Lister les assets | JWT, tout rôle |
+| `GET` | `/assets/{id}/findings` | Lister les findings d'un asset | JWT, tout rôle |
+| `POST` | `/scans/ingest` | Ingérer un rapport de scan | Clé d'API |
+| `GET` | `/scans/{id}` | Consulter un scan | JWT, tout rôle |
+
+## Authentification et rôles
+
+Deux mécanismes distincts, pour deux usages distincts :
+
+- **Clé d'API** (`X-API-Key`) : réservée à `/scans/ingest`, l'ingestion machine-à-machine depuis un pipeline CI/CD. Pas de notion d'utilisateur ni de rôle ici.
+- **Comptes utilisateurs (JWT)** : pour les humains qui consultent et gèrent les données via l'API. Trois rôles :
+
+| Rôle | Peut lire (assets, findings, scans) | Peut créer des assets | Peut gérer les utilisateurs |
+| --- | --- | --- | --- |
+| `viewer` | Oui | Non | Non |
+| `analyst` | Oui | Oui | Non |
+| `admin` | Oui | Oui | Oui |
+
+Il n'y a pas d'auto-inscription : un compte est toujours créé par un admin via `POST /users`. Le tout premier compte admin, avant qu'aucun n'existe, se crée directement en base :
+
+    python -m scripts.create_admin --username amiir --password "un-mot-de-passe-solide"
+
+Récupérer un jeton :
+
+    curl -X POST http://localhost:8001/auth/login \
+      -d "username=amiir&password=un-mot-de-passe-solide"
+
+Puis l'utiliser :
+
+    curl http://localhost:8001/assets \
+      -H "Authorization: Bearer <token>"
 
 ---
 
@@ -196,8 +236,10 @@ La sécurité est traitée à deux niveaux distincts.
 - Aucun secret dans le code, configuration exclusivement par variables d'environnement
 - Validation stricte de toutes les entrées via Pydantic
 - Séparation des modèles de persistance et des schémas d'exposition
-- Authentification par clé d'API sur les endpoints d'écriture
-- Limitation de débit par client
+- Clé d'API pour l'ingestion machine-à-machine, comptes utilisateurs JWT avec RBAC (admin / analyst / viewer) pour tout le reste
+- Mots de passe hachés avec bcrypt, jamais stockés ni exposés en clair
+- Pas d'auto-inscription : les comptes sont créés par un admin
+- Limitation de débit par client, y compris sur la connexion (anti bruteforce)
 - Conteneurs exécutés avec un utilisateur non privilégié
 
 **Sécurité de la chaîne de production**
@@ -234,19 +276,21 @@ Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/l
 ## Feuille de route
 
 - [x] Squelette de l'API et modèle de données
-- [ ] Conteneurisation et durcissement de l'image
-- [ ] Orchestration locale via Docker Compose
-- [ ] Sécurité applicative : authentification, limitation de débit, en-têtes
-- [ ] Worker asynchrone et file de messages
-- [ ] Première campagne de tests de charge
-- [ ] Cache, pool de connexions, arrêt gracieux
+- [x] Conteneurisation et durcissement de l'image
+- [x] Orchestration locale via Docker Compose
+- [x] Sécurité applicative : authentification par clé d'API, limitation de débit, en-têtes
+- [x] Worker asynchrone et file de messages
+- [x] Première campagne de tests de charge
+- [x] Cache, pool de connexions, arrêt gracieux
+- [x] Comptes utilisateurs et rôles (RBAC)
+- [ ] Ingestion multi-scanner et score EPSS
 - [ ] Répartition de charge et réplicas
-- [ ] Pipeline d'intégration continue
-- [ ] Gates de sécurité et hooks pre-commit
-- [ ] Tests dynamiques et scans planifiés
-- [ ] Déploiement Ansible puis Kubernetes
 - [ ] Supervision Prometheus et Grafana
-- [ ] Documentation finale et guidelines développeurs
+- [ ] Notifications (webhook/Slack) et sauvegarde documentée
+- [ ] Frontend simple
+- [ ] Pipeline d'intégration continue et gates de sécurité
+- [ ] Documentation finale et section limitations connues
+- [ ] Manifests Kubernetes / Helm chart
 
 ---
 
@@ -256,12 +300,16 @@ Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/l
     ├── app/
     │   ├── __init__.py
     │   ├── main.py          points d'entree HTTP
+    │   ├── auth.py          JWT, hachage de mot de passe, RBAC
     │   ├── database.py      connexion et session PostgreSQL
     │   ├── models.py        tables SQLAlchemy
     │   └── schemas.py       validation Pydantic
+    ├── scripts/
+    │   └── create_admin.py  creation du tout premier compte admin
     ├── tests/
     │   ├── __init__.py
-    │   └── test_api.py
+    │   ├── test_api.py
+    │   └── test_auth.py
     ├── docs/
     ├── .env.example
     ├── .gitignore

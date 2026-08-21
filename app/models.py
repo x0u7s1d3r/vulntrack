@@ -1,7 +1,7 @@
 import hashlib
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -9,6 +9,18 @@ from app.database import Base
 
 def utcnow():
     return datetime.now(timezone.utc)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), nullable=False, unique=True, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    # "admin" | "analyst" | "viewer", valide en amont par schemas.UserRole
+    role = Column(String(20), nullable=False, default="viewer")
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
 class Asset(Base):

@@ -88,3 +88,42 @@ class IngestAccepted(BaseModel):
     scan_id: int
     status: str
     message: str
+
+
+class UserRole(str, Enum):
+    ADMIN = "admin"
+    ANALYST = "analyst"
+    VIEWER = "viewer"
+
+
+class UserCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(min_length=3, max_length=100)
+    password: str = Field(min_length=12, max_length=128)
+    role: UserRole = UserRole.VIEWER
+
+    @field_validator("username")
+    @classmethod
+    def username_must_be_clean(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("le nom d'utilisateur ne peut pas etre vide")
+        if any(c in v for c in ["\n", "\r", "\x00", " "]):
+            raise ValueError("caracteres interdits dans le nom d'utilisateur")
+        return v
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
