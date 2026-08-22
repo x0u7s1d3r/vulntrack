@@ -1,6 +1,7 @@
 import json
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import (
     Depends,
@@ -13,8 +14,9 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
@@ -35,6 +37,8 @@ from app.middleware import SecurityHeadersMiddleware
 from app.queue import ingest_queue
 from app.security import get_client_ip, require_api_key
 from app.storage import save_report
+from app.web import RedirectToLogin
+from app.web import router as web_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,6 +86,19 @@ if settings.cors_origin_list:
         allow_methods=["GET", "POST"],
         allow_headers=["X-API-Key", "Authorization", "Content-Type"],
     )
+
+# Frontend web (etape 13) : CSS statique en same-origin (CSP inchangee) et
+# routeur de consultation en lecture seule sous /ui.
+_WEB_STATIC = Path(__file__).resolve().parent / "static"
+app.mount("/ui/static", StaticFiles(directory=str(_WEB_STATIC)), name="web-static")
+app.include_router(web_router)
+
+
+@app.exception_handler(RedirectToLogin)
+async def redirect_to_login_handler(request: Request, exc: RedirectToLogin):
+    """Une page /ui protegee demandee sans session valide renvoie vers la
+    page de connexion plutot qu'une erreur JSON."""
+    return RedirectResponse(url="/ui/login", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.exception_handler(Exception)

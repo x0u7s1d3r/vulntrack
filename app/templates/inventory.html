@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Inventaire système — VulnTrack{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Inventaire système</h1>
+  <p class="subtitle">Couverture de scan, exposition et hygiène de sécurité par asset</p>
+</div>
+
+<section class="kpi-row kpi-row-4" id="kpis" aria-live="polite">
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2 class="card-title">Assets suivis</h2>
+    <span class="hint">score d'hygiène = couverture de scan pénalisée par les vulnérabilités ouvertes</span>
+  </div>
+  <div id="inventory-table"></div>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+{% block scripts %}
+<script src="/ui/static/app.js" data-page="inventory" defer></script>
+{% endblock %}

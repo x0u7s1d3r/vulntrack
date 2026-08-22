@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Tableau de bord — VulnTrack{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Tableau de bord</h1>
+  <p class="subtitle">Vue d'ensemble des vulnérabilités suivies</p>
+</div>
+
+<section class="kpi-row kpi-row-6" id="kpis" aria-live="polite">
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+</section>
+
+<div class="dash-grid">
+  <section class="card span-4">
+    <h2 class="card-title">Sévérité (ouvertes)</h2>
+    <div class="donut-wrap">
+      <div id="donut"></div>
+      <ul class="legend" id="severity-legend"></ul>
+    </div>
+  </section>
+
+  <section class="card span-4">
+    <h2 class="card-title">Cycle de vie</h2>
+    <div id="lifecycle"></div>
+  </section>
+
+  <section class="card span-4">
+    <h2 class="card-title">Par scanner (ouvertes)</h2>
+    <div id="scanner-breakdown"></div>
+  </section>
+
+  <section class="card span-8">
+    <h2 class="card-title">Découvertes dans le temps</h2>
+    <div id="timeline-chart"></div>
+  </section>
+
+  <section class="card span-4">
+    <h2 class="card-title">Top assets à risque</h2>
+    <div id="top-assets"></div>
+  </section>
+
+  <section class="card span-7">
+    <div class="card-head">
+      <h2 class="card-title">À prioriser</h2>
+      <span class="hint">critiques &amp; élevées ouvertes, par exploitabilité (EPSS)</span>
+    </div>
+    <div id="prioritize"></div>
+  </section>
+
+  <section class="card span-5">
+    <h2 class="card-title">CVE les plus fréquentes</h2>
+    <div id="top-cves"></div>
+  </section>
+
+  <section class="card span-7">
+    <h2 class="card-title">Activité récente</h2>
+    <div id="recent-scans"></div>
+  </section>
+
+  <section class="card span-5">
+    <div class="card-head">
+      <h2 class="card-title">Assets</h2>
+      <input class="search" id="asset-search" type="search" placeholder="Rechercher…" autocomplete="off">
+    </div>
+    <div id="assets-table"></div>
+  </section>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+{% block scripts %}
+<script src="/ui/static/app.js" data-page="overview" defer></script>
+{% endblock %}

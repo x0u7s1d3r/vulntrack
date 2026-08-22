@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}VulnTrack{% endblock %}</title>
+  <link rel="stylesheet" href="/ui/static/style.css">
+</head>
+<body>
+{% if user %}
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="/ui"><span class="brand-mark">◈</span> <span class="brand-name">VulnTrack</span></a>
+    <nav class="side-nav">
+      <a class="nav-item {% if active == 'dashboard' %}active{% endif %}" href="/ui">
+        <span class="nav-ico">▚</span> Tableau de bord
+      </a>
+      <a class="nav-item {% if active == 'findings' %}active{% endif %}" href="/ui/findings">
+        <span class="nav-ico">⌗</span> Findings
+      </a>
+
+      <span class="nav-group">Détection</span>
+      <a class="nav-item {% if active == 'vulnerabilities' %}active{% endif %}" href="/ui/vulnerabilities">
+        <span class="nav-ico">◎</span> Vulnérabilités <span class="nav-tag">CVE</span>
+      </a>
+      <a class="nav-item {% if active == 'sca' %}active{% endif %}" href="/ui/sca">
+        <span class="nav-ico">❮❯</span> Analyse de code <span class="nav-tag">SAST</span>
+      </a>
+      <a class="nav-item {% if active == 'secrets' %}active{% endif %}" href="/ui/secrets">
+        <span class="nav-ico">⚿</span> Secrets &amp; fuites
+      </a>
+
+      <span class="nav-group">Cartographie</span>
+      <a class="nav-item {% if active == 'attack' %}active{% endif %}" href="/ui/attack">
+        <span class="nav-ico">⊞</span> MITRE ATT&amp;CK
+      </a>
+
+      <span class="nav-group">Inventaire</span>
+      <a class="nav-item {% if active == 'inventory' %}active{% endif %}" href="/ui/inventory">
+        <span class="nav-ico">▤</span> Inventaire système
+      </a>
+    </nav>
+    <div class="side-foot">
+      <span class="side-hint">Lecture seule</span>
+    </div>
+  </aside>
+
+  <div class="main-col">
+    <header class="topbar">
+      <div class="topbar-left" id="topbar-title"></div>
+      <nav class="user-nav">
+        <span class="user">
+          <span class="avatar">{{ user.username[0]|upper }}</span>
+          <span class="user-name">{{ user.username }}</span>
+          <span class="role role-{{ user.role }}">{{ user.role }}</span>
+        </span>
+        <a class="logout" href="/ui/logout">Déconnexion</a>
+      </nav>
+    </header>
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% else %}
+<main class="content content-centered">
+  {% block content_anon %}{% endblock %}
+</main>
+{% endif %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

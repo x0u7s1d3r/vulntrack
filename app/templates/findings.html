@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Findings — VulnTrack{% endblock %}
+{% block content %}
+<div class="page-head row-between">
+  <div>
+    <h1>Findings</h1>
+    <p class="subtitle">Explorer, filtrer et trier toutes les vulnérabilités</p>
+  </div>
+  <a class="btn btn-ghost" id="export-btn" href="#">⭳ Exporter CSV</a>
+</div>
+
+<section class="card filters-card">
+  <div class="filters">
+    <input class="search grow" id="f-search" type="search" placeholder="Rechercher (titre, CVE, règle, fichier, composant)…" autocomplete="off">
+    <select class="select" id="f-asset" aria-label="Asset"><option value="">Tous les assets</option></select>
+    <select class="select" id="f-scanner" aria-label="Scanner"><option value="">Tous scanners</option></select>
+    <label class="epss-filter">EPSS ≥ <span id="epss-val">0.00</span>
+      <input id="f-epss" type="range" min="0" max="1" step="0.05" value="0">
+    </label>
+    <label class="check"><input type="checkbox" id="f-hascve"> avec CVE</label>
+    <button class="btn btn-ghost btn-sm" id="f-reset" type="button">Réinitialiser</button>
+  </div>
+  <div class="filter-chips">
+    <div class="chips" id="sev-chips" role="group" aria-label="Sévérité"></div>
+    <div class="chips" id="status-chips" role="group" aria-label="Statut"></div>
+  </div>
+</section>
+
+<div class="bulkbar" id="bulkbar" hidden>
+  <span id="bulk-count" class="bulk-count"></span>
+  <span class="bulk-sep"></span>
+  <span class="bulk-label">Changer le statut :</span>
+  <div class="chips" id="bulk-actions"></div>
+  <button class="btn btn-ghost btn-sm" id="bulk-clear" type="button">Désélectionner</button>
+</div>
+
+<section class="card">
+  <div class="result-bar">
+    <span id="result-count" class="result-count"></span>
+    <div class="pager" id="pager"></div>
+  </div>
+  <div id="findings-table" class="table-scroll"></div>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+
+<div class="drawer-overlay" id="drawer-overlay" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Détail du finding">
+  <div id="drawer-content"></div>
+</aside>
+{% endblock %}
+{% block scripts %}
+<script src="/ui/static/app.js" data-page="findings" data-can-write="{{ 'true' if can_write else 'false' }}" defer></script>
+{% endblock %}

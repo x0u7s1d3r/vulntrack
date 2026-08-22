@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.name }} — VulnTrack{% endblock %}
+{% block content %}
+<p class="crumb"><a href="/ui">← Tableau de bord</a></p>
+<div class="page-head">
+  <h1>{{ asset.name }} <span class="tag">{{ asset.type }}</span></h1>
+</div>
+
+<section class="kpi-row" id="asset-kpis" aria-live="polite">
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+</section>
+
+<section class="card">
+  <h2 class="card-title">Répartition des findings</h2>
+  <div id="asset-sevbar"></div>
+</section>
+
+<section class="card">
+  <div class="explorer-toolbar">
+    <input class="search" id="finding-search" type="search" placeholder="Rechercher (titre, CVE, règle, fichier)…" autocomplete="off">
+    <div class="chips" id="severity-filters" role="group" aria-label="Filtrer par sévérité"></div>
+    <div class="chips" id="status-filters" role="group" aria-label="Filtrer par statut"></div>
+  </div>
+  <p class="result-count" id="result-count"></p>
+  <div id="findings-table"></div>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+{% block scripts %}
+<script src="/ui/static/app.js" data-page="asset" data-asset-id="{{ asset.id }}" defer></script>
+{% endblock %}

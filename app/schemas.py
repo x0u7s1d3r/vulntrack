@@ -134,3 +134,27 @@ class UserOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+# ------------------------------------------------------------- triage (web)
+
+
+class StatusChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: FindingStatus
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class NoteCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class BulkStatusChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[int] = Field(min_length=1, max_length=500)
+    status: FindingStatus
+    note: str | None = Field(default=None, max_length=2000)

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}MITRE ATT&amp;CK — VulnTrack{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>MITRE ATT&amp;CK</h1>
+  <p class="subtitle">Lecture offensive&nbsp;: à quelles étapes d'une attaque nos vulnérabilités ouvrent-elles la porte&nbsp;?</p>
+</div>
+
+<section class="kpi-row kpi-row-4" id="kpis" aria-live="polite">
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2 class="card-title">Matrice des tactiques &amp; techniques</h2>
+    <span class="hint">findings ouverts, cartographiés par heuristique</span>
+  </div>
+  <div id="attack-matrix" class="attack-matrix"></div>
+</section>
+
+<p class="footnote">La cartographie est une approximation déterministe (mots-clés du titre et de la règle, repli par scanner), destinée à prioriser&nbsp;: ce n'est pas une détection ATT&amp;CK certifiée.</p>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+{% block scripts %}
+<script src="/ui/static/app.js" data-page="attack" defer></script>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Analyse de code (SAST) — VulnTrack{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Analyse de code <span class="head-tag">SAST</span></h1>
+  <p class="subtitle">Défauts de sécurité détectés dans le code source par analyse statique (Semgrep)</p>
+</div>
+
+<section class="kpi-row kpi-row-5" id="kpis" aria-live="polite">
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+</section>
+
+<div class="dash-grid">
+  <section class="card span-4">
+    <h2 class="card-title">Sévérité (ouvertes)</h2>
+    <div class="donut-wrap">
+      <div id="sca-donut"></div>
+      <ul class="legend" id="sca-legend"></ul>
+    </div>
+  </section>
+
+  <section class="card span-8">
+    <h2 class="card-title">Par famille de règle</h2>
+    <div id="sca-category"></div>
+  </section>
+
+  <section class="card span-6">
+    <h2 class="card-title">Règles les plus déclenchées</h2>
+    <div id="sca-rules"></div>
+  </section>
+
+  <section class="card span-6">
+    <h2 class="card-title">Fichiers les plus touchés</h2>
+    <div id="sca-files"></div>
+  </section>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+{% block scripts %}
+<script src="/ui/static/app.js" data-page="sca" defer></script>
+{% endblock %}

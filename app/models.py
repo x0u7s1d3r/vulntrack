@@ -77,8 +77,14 @@ class Finding(Base):
     status = Column(String(30), default="open")
     first_seen = Column(DateTime(timezone=True), default=utcnow)
     last_seen = Column(DateTime(timezone=True), default=utcnow)
+    # Derniere action de triage (changement de statut / note). Distinct de
+    # last_seen, qui suit les scans, pas l'activite humaine.
+    updated_at = Column(DateTime(timezone=True), nullable=True)
 
     asset = relationship("Asset", back_populates="findings")
+    notes = relationship(
+        "FindingNote", back_populates="finding", cascade="all, delete-orphan"
+    )
 
     @staticmethod
     def make_fingerprint(
@@ -99,3 +105,27 @@ class Finding(Base):
         else:
             raw = f"{asset_name}|{scanner}|{rule_id or ''}|{file_path or ''}|{line_number or ''}"
         return hashlib.sha256(raw.encode()).hexdigest()
+
+
+class FindingNote(Base):
+    """Journal d'un finding : commentaires libres et changements de statut.
+
+    Un seul modele pour les deux, distingues par `kind` : ainsi le detail
+    d'un finding affiche un fil chronologique unique (triage + discussions),
+    a la maniere des "overrides" et notes d'OpenVAS/Greenbone.
+    """
+
+    __tablename__ = "finding_notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    finding_id = Column(Integer, ForeignKey("findings.id"), nullable=False, index=True)
+    author = Column(String(100), nullable=False)
+    # "comment" | "status_change"
+    kind = Column(String(20), nullable=False, default="comment")
+    body = Column(Text, nullable=True)
+    # Renseignes pour kind="status_change" : tracabilite de la transition.
+    old_status = Column(String(30), nullable=True)
+    new_status = Column(String(30), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    finding = relationship("Finding", back_populates="notes")

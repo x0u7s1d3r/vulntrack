@@ -30,6 +30,7 @@ VulnTrack transforme ce flux brut en findings uniques, priorisés et suivis dans
 - Observabilité : métriques RED et métier au format Prometheus, tableau de bord Grafana provisionné
 - Notifications Slack / webhook sur les nouveaux findings au-dessus d'un seuil de sévérité
 - Sauvegarde et restauration scriptées et documentées
+- Console web de gestion : tableau de bord, workspace de findings, triage (statuts + notes + audit), actions en masse, export CSV
 
 ---
 
@@ -77,7 +78,8 @@ VulnTrack transforme ce flux brut en findings uniques, priorisés et suivis dans
 | --- | --- | --- |
 | `assets` | Élément surveillé (image, dépôt, URL) | `id`, `name`, `type`, `created_at` |
 | `scans` | Exécution d'un scanner sur un asset | `id`, `asset_id`, `scanner`, `status`, `started_at` |
-| `findings` | Vulnérabilité constatée | `id`, `asset_id`, `scanner`, `fingerprint`, `severity`, `cve`, `component`, `rule_id`, `file_path`, `line_number`, `epss_score`, `status`, `first_seen`, `last_seen` |
+| `findings` | Vulnérabilité constatée | `id`, `asset_id`, `scanner`, `fingerprint`, `severity`, `cve`, `component`, `rule_id`, `file_path`, `line_number`, `epss_score`, `status`, `first_seen`, `last_seen`, `updated_at` |
+| `finding_notes` | Journal de triage : commentaires et changements de statut historisés | `id`, `finding_id`, `author`, `kind`, `body`, `old_status`, `new_status`, `created_at` |
 
 Le champ `fingerprint` est un hash SHA-256 qui identifie une trouvaille de façon stable d'un scan à l'autre. Sa formule dépend du scanner :
 
@@ -352,6 +354,31 @@ L'envoi est **best-effort** : il part du worker, après que le scan est déjà e
 
 Seuls les **nouveaux** findings déclenchent une alerte, pas ceux déjà connus revus au scan suivant — sinon chaque rescan renverrait le même bruit.
 
+## Console web
+
+Une **console de gestion des vulnérabilités** est servie sous `/ui` — via Traefik : `http://localhost:8001/ui`. Ce n'est pas qu'un affichage : on y **travaille** (triage, notes, actions en masse, export), à la manière d'un Greenbone/OpenVAS. Elle réutilise les comptes de l'API (`scripts/create_admin.py` ou `POST /users`).
+
+**Tableau de bord** (`/ui`). Barre latérale de navigation, pleine largeur. Neuf panneaux : 6 indicateurs (assets, findings ouverts, critiques, élevés, **exploitables** = EPSS ≥ 0,5, corrigés), anneau des sévérités, cycle de vie (statuts), répartition par scanner, histogramme des découvertes dans le temps, top assets à risque (score pondéré), **panneau « À prioriser »** (critiques/élevés ouverts triés par exploitabilité EPSS), CVE les plus fréquentes, activité récente.
+
+**Workspace Findings** (`/ui/findings`). L'espace de travail : tous les findings, filtres combinables (sévérité, statut, scanner, asset, seuil EPSS, recherche plein-texte), tri de colonnes, pagination, facettes chiffrées. On sélectionne des lignes pour des **actions en masse**, ou on ouvre un finding dans un **panneau latéral** montrant tout le détail, l'**historique de triage** et les notes.
+
+**On peut agir** (rôles `analyst` / `admin` ; `viewer` reste en lecture seule) :
+
+- Changer le **statut** d'un finding (`open` → `in_progress` → `accepted` / `false_positive` / `fixed`) avec une justification — l'équivalent des *overrides* d'OpenVAS.
+- Ajouter des **notes/commentaires**.
+- Chaque changement de statut est **historisé** (auteur, transition, justification, horodatage) dans un fil chronologique unique par finding.
+- **Actions en masse** sur une sélection, et **export CSV** respectant les filtres courants.
+
+**Architecture.** Les pages sont des coquilles HTML qui récupèrent leurs données via des endpoints JSON (`/ui/api/*`) ; le rendu dynamique est fait en JavaScript maison. Aucune dépendance externe (pas de React, pas de CDN), ce qui permet de conserver la CSP stricte.
+
+Choix de sécurité :
+
+- **Cookie de session `HttpOnly`** contenant le JWT (le JavaScript ne peut pas lire le jeton), limité au chemin `/ui`, marqué `Secure` hors développement. Les endpoints JSON renvoient `401` sans session (le client redirige alors vers la connexion), et non du HTML.
+- **Protection CSRF** sur toutes les mutations : jeton double-submit (cookie lisible par le JS + en-tête `X-CSRF-Token` que seul le même origine peut poser), combiné à `SameSite=Lax`. Un site tiers ne peut ni lire le cookie ni forger l'en-tête.
+- **RBAC** appliqué côté serveur : les endpoints de mutation exigent le rôle `analyst` ou `admin` ; le front masque simplement les boutons pour un `viewer`, mais c'est le serveur qui tranche.
+- **Anti-XSS par construction** : les données (titres de findings, issus de rapports de scanners) sont insérées dans le DOM via `textContent`, jamais via `innerHTML`. Un titre malveillant (`<script>…`) ne peut donc pas s'exécuter.
+- **CSP stricte inchangée** : `default-src 'self'`. CSS et JS servis en fichiers statiques same-origin, graphiques en SVG construit par attributs — aucun style ni script inline, aucun hôte externe.
+
 ## Sauvegarde et restauration
 
 Le seul état critique est la base PostgreSQL. Deux scripts opèrent directement sur le conteneur `db`, sans client PostgreSQL sur l'hôte :
@@ -377,7 +404,7 @@ La procédure complète — automatisation par cron, **test de bout en bout** (s
 - [x] Répartition de charge et réplicas
 - [x] Supervision Prometheus et Grafana
 - [x] Notifications (webhook/Slack) et sauvegarde documentée
-- [ ] Frontend simple
+- [x] Frontend simple
 - [ ] Pipeline d'intégration continue et gates de sécurité
 - [ ] Documentation finale et section limitations connues
 - [ ] Manifests Kubernetes / Helm chart
@@ -405,7 +432,11 @@ La procédure complète — automatisation par cron, **test de bout en bout** (s
     │   ├── security.py      cle d'API machine-a-machine
     │   ├── metrics.py       metriques RED (Prometheus, multi-process)
     │   ├── metrics_state.py jauges d'etat metier (exposees par le worker)
-    │   └── notifications.py alertes Slack / webhook sur nouveaux findings
+    │   ├── notifications.py alertes Slack / webhook sur nouveaux findings
+    │   ├── web.py           console /ui : pages + API JSON + triage (CSRF, RBAC)
+    │   ├── web_stats.py     agregations et recherche filtree des findings
+    │   ├── templates/       coquilles Jinja2 (dashboard, findings, asset, login)
+    │   └── static/          app.js (console dynamique) + style.css
     ├── observability/
     │   ├── prometheus.yml   configuration de collecte
     │   └── grafana/
@@ -425,7 +456,10 @@ La procédure complète — automatisation par cron, **test de bout en bout** (s
     │   ├── test_jobs.py
     │   ├── test_security.py
     │   ├── test_metrics.py
-    │   └── test_notifications.py
+    │   ├── test_notifications.py
+    │   ├── test_web.py
+    │   ├── test_web_stats.py
+    │   └── test_web_triage.py
     ├── docs/
     │   └── backup-restore.md  procedure de sauvegarde/restauration
     ├── worker.py            worker RQ + serveur de metriques d'etat
