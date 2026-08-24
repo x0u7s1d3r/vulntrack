@@ -30,3 +30,33 @@ jobs:
 
       - name: Tests (pytest)
         run: pytest -q
+  sast:
+    name: SAST — analyse statique
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les outils SAST
+        run: pip install -r requirements-dev.txt
+
+      - name: Semgrep (analyse par règles)
+        # --error : fait échouer le build si un finding subsiste (c'est le gate).
+        # --exclude-rule : la règle django-no-csrf-token est spécifique à Django
+        # et ne s'applique pas à notre pile FastAPI/Jinja (le login-CSRF est
+        # traité par un jeton pré-auth, cf. login_submit).
+        run: |
+          semgrep scan --config auto --error \
+            --exclude-rule python.django.security.django-no-csrf-token.django-no-csrf-token \
+            app
+
+      - name: Bandit (SAST Python)
+        # -ll : ne remonte que la sévérité moyenne et plus ; sort en erreur si
+        # un problème est trouvé → gate.
+        run: bandit -r app -ll
