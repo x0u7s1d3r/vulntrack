@@ -689,3 +689,119 @@ h2.card-title::before { content: ""; width: 3px; height: 14px; border-radius: 2p
 .hyg-mid { fill: var(--medium); }
 .hyg-bad { fill: var(--critical); }
 .hyg-num { font-size: 0.78rem; font-weight: 600; color: var(--muted); min-width: 1.6rem; }
+
+/* =================================================================
+   RBVM : KEV, score de risque, SLA/MTTR, criticite, posture.
+   ================================================================= */
+
+.kpi-row-8 { grid-template-columns: repeat(8, 1fr); }
+@media (max-width: 1300px) { .kpi-row-8 { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 780px) { .kpi-row-8 { grid-template-columns: repeat(2, 1fr); } }
+
+/* badge KEV : menace active confirmee (CISA) */
+.kev-badge {
+  display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.4rem;
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.04em; border-radius: 4px;
+  background: var(--critical); color: #fff; vertical-align: middle;
+  box-shadow: 0 0 0 1px rgba(244,63,94,0.4), 0 0 8px rgba(244,63,94,0.35);
+}
+.overdue-badge {
+  display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.4rem;
+  font-size: 0.62rem; font-weight: 700; border-radius: 4px; vertical-align: middle;
+  background: rgba(251,146,60,0.16); color: var(--high); border: 1px solid rgba(251,146,60,0.4);
+}
+
+/* pastille de score de risque 0-100 */
+.risk-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2rem; padding: 0.1rem 0.4rem; border-radius: 6px;
+  font-size: 0.8rem; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: #0b0d12;
+}
+.risk-critical { background: var(--critical); color: #fff; }
+.risk-high { background: var(--high); }
+.risk-medium { background: var(--medium); }
+.risk-low { background: var(--low); }
+
+/* pastille de criticite d'asset */
+.crit-pill {
+  display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
+  font-size: 0.7rem; font-weight: 600; white-space: nowrap;
+}
+.crit-crown { background: rgba(244,63,94,0.16); color: var(--critical); }
+.crit-high { background: rgba(251,146,60,0.16); color: var(--high); }
+.crit-medium { background: rgba(100,116,139,0.18); color: var(--muted); }
+.crit-low { background: rgba(100,116,139,0.12); color: var(--faint); }
+
+/* selecteur de criticite (inventaire, editable) */
+.crit-select {
+  background: var(--panel-2); border: 1px solid var(--border-2); color: var(--text);
+  border-radius: 6px; padding: 0.2rem 0.4rem; font-size: 0.76rem; font-weight: 600;
+}
+.crit-select.crit-crown { color: var(--critical); border-color: rgba(244,63,94,0.4); }
+.crit-select.crit-high { color: var(--high); border-color: rgba(251,146,60,0.4); }
+
+.check-kev { color: var(--critical); font-weight: 600; }
+.cve-cell, .threat-cell { display: inline-flex; align-items: center; gap: 0.2rem; }
+.asset-crit { display: inline-flex; align-items: center; gap: 0.5rem; }
+
+/* en-tete de page avec action a droite */
+.page-head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.btn-report {
+  flex: none; padding: 0.55rem 1rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff;
+  border: none; white-space: nowrap;
+}
+.btn-report:hover { text-decoration: none; filter: brightness(1.08); }
+
+/* flux de remediation (chart divergent) */
+.flow-axis { stroke: var(--border-2); stroke-width: 0.4; }
+.flow-opened { fill: var(--accent-2); }
+.flow-closed { fill: var(--low); }
+.dot-opened { background: var(--accent-2); }
+.dot-closed { background: var(--low); }
+
+/* =================================================================
+   Thème clair (bascule via #theme-toggle, persistée en localStorage).
+   Redéfinit les tokens de couleur ; les composants héritent via var().
+   ================================================================= */
+.theme-toggle {
+  background: transparent; border: 1px solid var(--border-2); color: var(--muted);
+  width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 1rem;
+  display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+}
+.theme-toggle:hover { color: var(--accent-2); border-color: var(--accent); }
+
+:root[data-theme="light"] {
+  --bg: #eef0f4;
+  --bg-2: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #f4f6f9;
+  --border: #e4e7ee;
+  --border-2: #d3d8e2;
+  --text: #161a22;
+  --muted: #5b6472;
+  --faint: #97a0b0;
+  --shadow: 0 1px 2px rgba(20,25,40,0.06), 0 8px 24px rgba(20,25,40,0.08);
+}
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(1100px 500px at 100% -10%, rgba(99,102,241,0.10), transparent 60%),
+    var(--bg);
+}
+:root[data-theme="light"] .topbar { background: rgba(255,255,255,0.85); }
+:root[data-theme="light"] .sidebar { background: #f7f8fb; }
+:root[data-theme="light"] .brand-name { -webkit-text-fill-color: initial; background: none; color: var(--text); }
+:root[data-theme="light"] .skeleton {
+  background: linear-gradient(90deg, #eef0f4 25%, #e4e7ee 50%, #eef0f4 75%);
+}
+:root[data-theme="light"] .cov-off { color: var(--faint); }
+/* Le dégradé par défaut du chiffre KPI est clair (pensé pour le fond sombre) :
+   on le repasse en foncé pour rester lisible sur fond clair. */
+:root[data-theme="light"] .kpi-value {
+  background: linear-gradient(180deg, #2b3140, #14171f);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+:root[data-theme="light"] .kpi-critical .kpi-value { background: linear-gradient(180deg, #f43f5e, #c31d3c); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+:root[data-theme="light"] .kpi-high .kpi-value { background: linear-gradient(180deg, #f97316, #c2560a); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+:root[data-theme="light"] .kpi-low .kpi-value { background: linear-gradient(180deg, #10b981, #0a8f63); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }

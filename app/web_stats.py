@@ -11,6 +11,8 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Asset, Finding, Scan
+from app.risk import risk_band, risk_score, risk_score_sql
+from app.sla import is_overdue
 
 # Du plus grave au moins grave. Ordre d'affichage et de tri partout.
 SEVERITIES = ["critical", "high", "medium", "low", "info"]
@@ -144,7 +146,25 @@ def extra_totals(db: Session) -> dict:
     fixed = (
         db.query(func.count(Finding.id)).filter(Finding.status == "fixed").scalar() or 0
     )
-    return {"exploitable_open": exploitable, "fixed": fixed}
+    kev_open = (
+        db.query(func.count(Finding.id))
+        .filter(Finding.status.in_(OPEN_STATUSES), Finding.kev.is_(True))
+        .scalar()
+        or 0
+    )
+    # En retard (SLA depasse) : calcul en Python sur les findings ouverts.
+    open_rows = (
+        db.query(Finding.severity, Finding.first_seen, Finding.status)
+        .filter(Finding.status.in_(OPEN_STATUSES))
+        .all()
+    )
+    overdue = sum(1 for sev, first, st in open_rows if is_overdue(first, sev, st))
+    return {
+        "exploitable_open": exploitable,
+        "fixed": fixed,
+        "kev_open": kev_open,
+        "overdue_open": overdue,
+    }
 
 
 def scanner_breakdown(db: Session) -> dict:
@@ -295,7 +315,7 @@ def recent_scans(db: Session, limit: int = 6) -> list[dict]:
 
 # ------------------------------------------------------------- explorateur global
 
-SORT_COLUMNS = {"severity", "epss", "last_seen", "title", "status"}
+SORT_COLUMNS = {"severity", "epss", "risk", "last_seen", "title", "status"}
 
 
 def _severity_sort_expr():
@@ -320,6 +340,8 @@ def build_findings_query(db: Session, f: dict):
         q = q.filter(Finding.asset_id == f["asset_id"])
     if f.get("has_cve"):
         q = q.filter(Finding.cve.isnot(None))
+    if f.get("kev"):
+        q = q.filter(Finding.kev.is_(True))
     if f.get("min_epss") is not None:
         q = q.filter(Finding.epss_score.isnot(None), Finding.epss_score >= f["min_epss"])
     if f.get("q"):
@@ -342,6 +364,10 @@ def _sorted(query, sort: str, order: str):
         col = _severity_sort_expr()
     elif sort == "epss":
         col = func.coalesce(Finding.epss_score, -1)
+    elif sort == "risk":
+        # Le score de risque depend de la criticite de l'asset : jointure.
+        query = query.join(Asset, Finding.asset_id == Asset.id)
+        col = risk_score_sql()
     elif sort == "last_seen":
         col = Finding.last_seen
     elif sort == "status":
@@ -351,7 +377,10 @@ def _sorted(query, sort: str, order: str):
     return query.order_by(direction(col), Finding.id.desc())
 
 
-def finding_row(f: Finding, asset_name: str | None = None) -> dict:
+def finding_row(f: Finding, asset_name: str | None = None,
+                criticality: str = "medium") -> dict:
+    kev = bool(getattr(f, "kev", False))
+    score = risk_score(f.severity, f.epss_score, kev, criticality)
     return {
         "id": f.id,
         "asset_id": f.asset_id,
@@ -365,6 +394,10 @@ def finding_row(f: Finding, asset_name: str | None = None) -> dict:
         "file_path": f.file_path,
         "line_number": f.line_number,
         "epss_score": f.epss_score,
+        "kev": kev,
+        "risk": score,
+        "risk_band": risk_band(score),
+        "overdue": is_overdue(f.first_seen, f.severity, f.status),
         "status": f.status,
         "first_seen": f.first_seen.strftime("%Y-%m-%d") if f.first_seen else None,
         "last_seen": f.last_seen.strftime("%Y-%m-%d") if f.last_seen else None,
@@ -392,8 +425,15 @@ def search_findings(db: Session, f: dict, sort: str, order: str, page: int, page
     )
 
     rows = _sorted(base, sort, order).offset((page - 1) * page_size).limit(page_size).all()
-    asset_names = {a.id: a.name for a in db.query(Asset).all()}
-    items = [finding_row(r, asset_names.get(r.asset_id)) for r in rows]
+    assets = {a.id: a for a in db.query(Asset).all()}
+    items = [
+        finding_row(
+            r,
+            assets[r.asset_id].name if r.asset_id in assets else None,
+            assets[r.asset_id].criticality if r.asset_id in assets else "medium",
+        )
+        for r in rows
+    ]
 
     return {
         "items": items,

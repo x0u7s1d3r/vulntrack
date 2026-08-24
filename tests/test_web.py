@@ -235,3 +235,62 @@ def test_attack_api_lists_seven_tactics(client, db_session):
     d = client.get("/ui/api/attack").json()
     assert len(d["tactics"]) == 7
     assert d["totals"]["mapped"] >= 1
+
+
+def test_posture_page_and_api(client, db_session):
+    _create_user(db_session)
+    _asset_with_findings(db_session)
+    _login(client)
+    assert client.get("/ui/posture").status_code == 200
+    d = client.get("/ui/api/posture").json()
+    assert "totals" in d and "sla" in d and "mttr" in d and "risk" in d
+
+
+def test_posture_api_requires_session(client):
+    assert client.get("/ui/api/posture").status_code == 401
+
+
+def test_report_pdf_endpoint(client, db_session):
+    _create_user(db_session)
+    _asset_with_findings(db_session)
+    _login(client)
+    r = client.get("/ui/api/report.pdf")
+    assert r.status_code == 200
+    assert "application/pdf" in r.headers["content-type"]
+    assert r.content[:5] == b"%PDF-"
+
+
+def test_set_criticality_requires_write_role(client, db_session):
+    # viewer : lecture seule -> 403 (RBAC), meme avec CSRF.
+    _create_user(db_session, role="viewer")
+    asset = _asset_with_findings(db_session)
+    _login(client)
+    csrf = client.cookies.get("vulntrack_csrf")
+    r = client.patch(f"/ui/api/assets/{asset.id}/criticality",
+                     json={"criticality": "crown"}, headers={"X-CSRF-Token": csrf})
+    assert r.status_code == 403
+
+
+def test_set_criticality_admin_ok(client, db_session):
+    _create_user(db_session, role="admin")
+    asset = _asset_with_findings(db_session)
+    _login(client)
+    csrf = client.cookies.get("vulntrack_csrf")
+    r = client.patch(f"/ui/api/assets/{asset.id}/criticality",
+                     json={"criticality": "crown"}, headers={"X-CSRF-Token": csrf})
+    assert r.status_code == 200
+    assert r.json()["criticality"] == "crown"
+    db_session.expire_all()
+    assert db_session.get(models.Asset, asset.id).criticality == "crown"
+
+
+def test_findings_kev_filter_and_risk_sort(client, db_session):
+    _create_user(db_session)
+    _asset_with_findings(db_session)
+    _login(client)
+    # tri par risque accepté + chaque item porte un score de risque.
+    d = client.get("/ui/api/findings?sort=risk&order=desc").json()
+    assert d["items"], "au moins un finding"
+    assert "risk" in d["items"][0] and "kev" in d["items"][0] and "overdue" in d["items"][0]
+    risks = [i["risk"] for i in d["items"]]
+    assert risks == sorted(risks, reverse=True)

@@ -29,6 +29,9 @@ class Asset(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, unique=True)
     type = Column(String(50), nullable=False)
+    # Criticite metier de l'asset (contexte RBVM) : pondere le score de risque
+    # de ses findings. "low" | "medium" | "high" | "crown" (joyau : actif vital).
+    criticality = Column(String(20), nullable=False, server_default="medium", default="medium")
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     findings = relationship("Finding", back_populates="asset")
@@ -74,6 +77,10 @@ class Finding(Base):
     # uniquement pour les findings avec CVE ; None si l'enrichissement a
     # echoue ou n'a pas encore eu lieu.
     epss_score = Column(Float, nullable=True)
+    # Presence dans le catalogue CISA KEV (Known Exploited Vulnerabilities) :
+    # la CVE est activement exploitee dans la nature. Signal de menace le plus
+    # fort, complementaire de l'EPSS (probabilite). Enrichi par le worker.
+    kev = Column(Boolean, nullable=False, server_default="0", default=False, index=True)
     status = Column(String(30), default="open")
     first_seen = Column(DateTime(timezone=True), default=utcnow)
     last_seen = Column(DateTime(timezone=True), default=utcnow)

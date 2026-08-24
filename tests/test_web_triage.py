@@ -162,7 +162,7 @@ def test_export_csv(client, db_session):
     assert "attachment" in r.headers["content-disposition"]
     body = r.text
     assert "CVE-2024-0001" in body
-    assert body.splitlines()[0].startswith("id,asset,scanner,severity")
+    assert body.splitlines()[0].startswith("id,asset,criticality,scanner,severity")
     # Respecte les filtres.
     filtered = client.get("/ui/api/export.csv?severity=critical").text
     assert "CVE-2024-0001" in filtered

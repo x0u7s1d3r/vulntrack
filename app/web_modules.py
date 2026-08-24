@@ -143,6 +143,7 @@ def vuln_detection_stats(db: Session) -> dict:
         Finding.epss_score.isnot(None), Finding.epss_score >= EPSS_EXPLOITABLE
     ).count()
     critical_open = _open_filter(base).filter(Finding.severity == "critical").count()
+    kev_open = _open_filter(base).filter(Finding.kev.is_(True)).count()
 
     by_severity = _sev_counts(
         _open_filter(base)
@@ -197,7 +198,7 @@ def vuln_detection_stats(db: Session) -> dict:
         {
             "id": f.id, "cve": f.cve, "asset_id": f.asset_id, "asset_name": name,
             "component": f.component, "severity": f.severity,
-            "epss_score": f.epss_score, "title": f.title,
+            "epss_score": f.epss_score, "kev": bool(f.kev), "title": f.title,
         }
         for f, name in prio_rows
     ]
@@ -206,6 +207,7 @@ def vuln_detection_stats(db: Session) -> dict:
         "totals": {
             "with_cve": total, "open": open_total, "unique_cves": unique_cves,
             "exploitable": exploitable, "critical_open": critical_open,
+            "kev_open": kev_open,
         },
         "by_severity": by_severity,
         "epss_dist": epss_dist,
@@ -501,6 +503,7 @@ def inventory_stats(db: Session) -> dict:
 
         items.append({
             "id": a.id, "name": a.name, "type": a.type,
+            "criticality": a.criticality,
             "open": open_total,
             "critical": sev["critical"], "high": sev["high"],
             "worst": worst_severity(sev),

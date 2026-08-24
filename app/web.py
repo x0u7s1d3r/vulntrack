@@ -38,6 +38,7 @@ from app.auth import create_access_token, decode_access_token, verify_password
 from app.cache import invalidate
 from app.config import get_settings
 from app.database import get_db
+from app.risk import CRITICALITIES, risk_score
 from app.web_modules import (
     attack_matrix,
     inventory_stats,
@@ -45,6 +46,7 @@ from app.web_modules import (
     secrets_stats,
     vuln_detection_stats,
 )
+from app.web_posture import posture_stats
 from app.web_stats import (
     SEVERITY_ORDER,
     SORT_COLUMNS,
@@ -246,6 +248,13 @@ def inventory_page(request: Request, user: models.User = Depends(current_web_use
     )
 
 
+@router.get("/posture", response_class=HTMLResponse)
+def posture_page(request: Request, user: models.User = Depends(current_web_user)):
+    return templates.TemplateResponse(
+        request, "posture.html", _page_ctx(user, active="posture")
+    )
+
+
 @router.get("/assets/{asset_id}", response_class=HTMLResponse)
 def asset_page(
     request: Request,
@@ -302,6 +311,8 @@ def api_overview(
             "high_open": stats["high_open"],
             "exploitable_open": extras["exploitable_open"],
             "fixed": extras["fixed"],
+            "kev_open": extras["kev_open"],
+            "overdue_open": extras["overdue_open"],
         },
         "open_by_severity": stats["open_by_severity"],
         "by_status": stats["by_status"],
@@ -357,6 +368,49 @@ def api_inventory(
     return inventory_stats(db)
 
 
+@router.get("/api/posture")
+def api_posture(
+    user: models.User = Depends(current_api_user),
+    db: Session = Depends(get_db),
+):
+    return posture_stats(db)
+
+
+@router.get("/api/report.pdf")
+def api_report_pdf(
+    user: models.User = Depends(current_api_user),
+    db: Session = Depends(get_db),
+):
+    """Rapport executif de posture au format PDF (synthese pour comite)."""
+    from app.reporting import build_report_pdf
+
+    pdf = build_report_pdf(db)
+    headers = {"Content-Disposition": 'attachment; filename="vulntrack-rapport-posture.pdf"'}
+    return StreamingResponse(iter([pdf]), media_type="application/pdf", headers=headers)
+
+
+@router.patch("/api/assets/{asset_id}/criticality")
+def api_set_criticality(
+    asset_id: int,
+    payload: schemas.CriticalityChange,
+    user: models.User = Depends(require_action_user),
+    db: Session = Depends(get_db),
+):
+    """Definit la criticite metier d'un asset (contexte RBVM). Reserve aux
+    roles d'ecriture ; le score de risque de ses findings s'ajuste."""
+    asset = db.get(models.Asset, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset introuvable")
+    crit = payload.criticality.value
+    if crit not in CRITICALITIES:
+        raise HTTPException(status_code=422, detail="Criticité invalide")
+    asset.criticality = crit
+    db.commit()
+    logger.info("Criticite de l'asset %s definie a '%s' par %s",
+                asset_id, crit, user.username)
+    return {"ok": True, "criticality": asset.criticality}
+
+
 @router.get("/api/assets/{asset_id}")
 def api_asset(
     asset_id: int,
@@ -376,6 +430,7 @@ def api_asset(
             "id": asset.id,
             "name": asset.name,
             "type": asset.type,
+            "criticality": asset.criticality,
             "created_at": asset.created_at.strftime("%Y-%m-%d") if asset.created_at else None,
         },
         "stats": {
@@ -406,7 +461,7 @@ def api_asset(
 # ------------------------------------------------------------- explorateur & triage
 
 
-def _finding_filters(severity, status_, scanner, asset_id, q, has_cve, min_epss) -> dict:
+def _finding_filters(severity, status_, scanner, asset_id, q, has_cve, min_epss, kev=False) -> dict:
     return {
         "severity": severity or None,
         "status": status_ or None,
@@ -415,6 +470,7 @@ def _finding_filters(severity, status_, scanner, asset_id, q, has_cve, min_epss)
         "q": q.strip() if q else None,
         "has_cve": has_cve,
         "min_epss": min_epss,
+        "kev": kev,
     }
 
 
@@ -446,6 +502,7 @@ def api_findings(
     asset_id: int | None = Query(None),
     q: str | None = Query(None),
     has_cve: bool = Query(False),
+    kev: bool = Query(False),
     min_epss: float | None = Query(None, ge=0, le=1),
     sort: str = Query("severity"),
     order: str = Query("asc"),
@@ -456,7 +513,7 @@ def api_findings(
         sort = "severity"
     if order not in ("asc", "desc"):
         order = "asc"
-    f = _finding_filters(severity, status_, scanner, asset_id, q, has_cve, min_epss)
+    f = _finding_filters(severity, status_, scanner, asset_id, q, has_cve, min_epss, kev)
     result = search_findings(db, f, sort, order, page, page_size)
     result["can_write"] = user.role in WRITE_ROLES
     return result
@@ -478,8 +535,12 @@ def api_finding_detail(
         .order_by(models.FindingNote.created_at.desc())
         .all()
     )
-    row = finding_row(f, asset.name if asset else None)
+    row = finding_row(
+        f, asset.name if asset else None,
+        asset.criticality if asset else "medium",
+    )
     row["description"] = f.description
+    row["criticality"] = asset.criticality if asset else "medium"
     return {
         "finding": row,
         "statuses": VALID_STATUSES,
@@ -585,25 +646,30 @@ def api_export_csv(
     asset_id: int | None = Query(None),
     q: str | None = Query(None),
     has_cve: bool = Query(False),
+    kev: bool = Query(False),
     min_epss: float | None = Query(None, ge=0, le=1),
 ):
-    f = _finding_filters(severity, status_, scanner, asset_id, q, has_cve, min_epss)
+    f = _finding_filters(severity, status_, scanner, asset_id, q, has_cve, min_epss, kev)
     rows = build_findings_query(db, f).order_by(models.Finding.id).all()
-    asset_names = {a.id: a.name for a in db.query(models.Asset).all()}
+    assets = {a.id: a for a in db.query(models.Asset).all()}
 
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([
-        "id", "asset", "scanner", "severity", "status", "cve", "component",
-        "rule_id", "file_path", "line_number", "epss_score", "title",
-        "first_seen", "last_seen",
+        "id", "asset", "criticality", "scanner", "severity", "status", "cve",
+        "component", "rule_id", "file_path", "line_number", "epss_score", "kev",
+        "risk_score", "title", "first_seen", "last_seen",
     ])
     for r in rows:
+        asset = assets.get(r.asset_id)
+        crit = asset.criticality if asset else "medium"
+        score = risk_score(r.severity, r.epss_score, bool(r.kev), crit)
         writer.writerow([
-            r.id, asset_names.get(r.asset_id, ""), r.scanner, r.severity, r.status,
+            r.id, asset.name if asset else "", crit, r.scanner, r.severity, r.status,
             r.cve or "", r.component or "", r.rule_id or "", r.file_path or "",
             r.line_number if r.line_number is not None else "",
             f"{r.epss_score:.5f}" if r.epss_score is not None else "",
+            "yes" if r.kev else "no", score,
             r.title,
             r.first_seen.strftime("%Y-%m-%d") if r.first_seen else "",
             r.last_seen.strftime("%Y-%m-%d") if r.last_seen else "",

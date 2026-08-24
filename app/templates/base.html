@@ -39,6 +39,11 @@
       <a class="nav-item {% if active == 'inventory' %}active{% endif %}" href="/ui/inventory">
         <span class="nav-ico">▤</span> Inventaire système
       </a>
+
+      <span class="nav-group">Pilotage</span>
+      <a class="nav-item {% if active == 'posture' %}active{% endif %}" href="/ui/posture">
+        <span class="nav-ico">◷</span> Posture &amp; SLA
+      </a>
     </nav>
     <div class="side-foot">
       <span class="side-hint">Lecture seule</span>
@@ -49,6 +54,7 @@
     <header class="topbar">
       <div class="topbar-left" id="topbar-title"></div>
       <nav class="user-nav">
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Basculer le thème clair/sombre" title="Thème clair / sombre">◐</button>
         <span class="user">
           <span class="avatar">{{ user.username[0]|upper }}</span>
           <span class="user-name">{{ user.username }}</span>

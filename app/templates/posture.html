@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Posture &amp; SLA — VulnTrack{% endblock %}
+{% block content %}
+<div class="page-head page-head-row">
+  <div>
+    <h1>Posture &amp; SLA</h1>
+    <p class="subtitle">Pilotage du risque : délais de remédiation, dette de vulnérabilités et priorités</p>
+  </div>
+  <a class="btn-report" href="/ui/api/report.pdf">⬇ Rapport exécutif (PDF)</a>
+</div>
+
+<section class="kpi-row kpi-row-6" id="kpis" aria-live="polite">
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+  <div class="skeleton kpi-skel"></div>
+</section>
+
+<div class="dash-grid">
+  <section class="card span-4">
+    <h2 class="card-title">Distribution du risque</h2>
+    <div class="donut-wrap">
+      <div id="risk-donut"></div>
+      <ul class="legend" id="risk-legend"></ul>
+    </div>
+  </section>
+
+  <section class="card span-8">
+    <div class="card-head">
+      <h2 class="card-title">Flux de remédiation</h2>
+      <span class="hint">découvertes (haut) vs corrigées (bas), 30 jours</span>
+    </div>
+    <div id="flow-chart"></div>
+  </section>
+
+  <section class="card span-6">
+    <div class="card-head">
+      <h2 class="card-title">En retard par sévérité</h2>
+      <span class="hint">SLA : crit. 7j · élevé 30j · moyen 90j · faible 180j</span>
+    </div>
+    <div id="overdue-sev"></div>
+  </section>
+
+  <section class="card span-6">
+    <h2 class="card-title">MTTR par sévérité <span class="hint">(jours)</span></h2>
+    <div id="mttr-sev"></div>
+  </section>
+
+  <section class="card span-12">
+    <div class="card-head">
+      <h2 class="card-title">Top risques à traiter</h2>
+      <span class="hint">score composite : sévérité × EPSS × KEV × criticité de l'asset</span>
+    </div>
+    <div id="top-risk"></div>
+  </section>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+{% block scripts %}
+<script src="/ui/static/app.js" data-page="posture" defer></script>
+{% endblock %}

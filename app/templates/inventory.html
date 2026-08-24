@@ -24,5 +24,5 @@
 <div class="toast" id="toast" hidden></div>
 {% endblock %}
 {% block scripts %}
-<script src="/ui/static/app.js" data-page="inventory" defer></script>
+<script src="/ui/static/app.js" data-page="inventory" data-can-write="{{ 'true' if can_write else 'false' }}" defer></script>
 {% endblock %}

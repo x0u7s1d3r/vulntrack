@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from app.config import get_settings
 from app.database import SessionLocal
 from app.epss import fetch_epss_scores
+from app.kev import fetch_kev_set
 from app.models import Asset, Finding, Scan
 from app.notifications import meets_threshold, send_scan_notification
 from app.parsers import get_parser
@@ -107,6 +108,21 @@ def process_scan(scan_id: int) -> dict:
                 except Exception:
                     logger.warning(
                         "Enrichissement EPSS indisponible pour le scan %s",
+                        scan_id,
+                        exc_info=True,
+                    )
+
+                # Enrichissement KEV (CISA) : marque les CVE activement
+                # exploitees. Meme logique best-effort que l'EPSS.
+                try:
+                    kev_set = fetch_kev_set()
+                    if kev_set:
+                        for finding in findings_with_cve:
+                            if finding.cve and finding.cve.upper() in kev_set:
+                                finding.kev = True
+                except Exception:
+                    logger.warning(
+                        "Enrichissement KEV indisponible pour le scan %s",
                         scan_id,
                         exc_info=True,
                     )

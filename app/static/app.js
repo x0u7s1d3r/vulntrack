@@ -6,6 +6,30 @@
 // - Graphiques en SVG (attributs de presentation), compatibles CSP stricte.
 
 (function () {
+  // Theme clair/sombre : preference persistee (localStorage, same-origin donc
+  // compatible CSP stricte). Applique tot pour limiter le flash au chargement.
+  (function initTheme() {
+    const KEY = "vt-theme";
+    const root = document.documentElement;
+    const apply = (t) => t === "light" ? root.setAttribute("data-theme", "light") : root.removeAttribute("data-theme");
+    let saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) { /* stockage indispo */ }
+    apply(saved);
+    const wire = () => {
+      const btn = document.getElementById("theme-toggle");
+      if (!btn) return;
+      btn.addEventListener("click", () => {
+        let cur = null;
+        try { cur = localStorage.getItem(KEY); } catch (e) { /* ignore */ }
+        const next = cur === "light" ? "dark" : "light";
+        try { localStorage.setItem(KEY, next); } catch (e) { /* ignore */ }
+        apply(next);
+      });
+    };
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wire);
+    else wire();
+  })();
+
   const SEVERITIES = ["critical", "high", "medium", "low", "info"];
   const SEV_RANK = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
   const SEV_LABEL = {
@@ -99,6 +123,15 @@
 
   function sevBadge(sev) { return el("span", { class: "sev sev-" + sev, text: SEV_LABEL[sev] || sev }); }
   function statusBadge(s) { return el("span", { class: "status status-" + s, text: STATUS_LABEL[s] || s }); }
+
+  const RISK_LABEL = { critical: "Critique", high: "Élevé", medium: "Moyen", low: "Faible" };
+  const CRIT_LABEL = { crown: "Joyau", high: "Haute", medium: "Moyenne", low: "Faible" };
+  function kevBadge() { return el("span", { class: "kev-badge", text: "KEV", attrs: { title: "CISA KEV : activement exploitée" } }); }
+  function overdueBadge() { return el("span", { class: "overdue-badge", text: "En retard", attrs: { title: "SLA de remédiation dépassé" } }); }
+  function riskBadge(score, band) {
+    return el("span", { class: "risk-badge risk-" + (band || "low"), text: String(score), attrs: { title: "Score de risque : " + score + "/100" } });
+  }
+  function critPill(crit) { return el("span", { class: "crit-pill crit-" + crit, text: CRIT_LABEL[crit] || crit }); }
 
   function empty(msg) { return el("p", { class: "empty", text: msg || "Aucune donnée." }); }
 
@@ -259,6 +292,8 @@
     kpis.appendChild(kpi(d.totals.open, "Findings ouverts", "default", findingsHref({ status: "open" })));
     kpis.appendChild(kpi(d.totals.critical_open, "Critiques ouverts", "critical", findingsHref({ severity: "critical", status: "open" })));
     kpis.appendChild(kpi(d.totals.high_open, "Élevés ouverts", "high", findingsHref({ severity: "high", status: "open" })));
+    kpis.appendChild(kpi(d.totals.kev_open || 0, "KEV (exploitées)", "critical", findingsHref({ kev: "true", status: "open" })));
+    kpis.appendChild(kpi(d.totals.overdue_open || 0, "SLA dépassé", "high", "/ui/posture"));
     kpis.appendChild(kpi(d.totals.exploitable_open, "Exploitables (EPSS≥.5)", "critical", findingsHref({ min_epss: "0.5", status: "open" })));
     kpis.appendChild(kpi(d.totals.fixed, "Corrigés", "low", findingsHref({ status: "fixed" })));
 
@@ -527,7 +562,7 @@
   async function renderFindings(canWrite) {
     const state = {
       q: "", sev: new Set(), status: new Set(), scanner: "", asset_id: "",
-      has_cve: false, min_epss: 0, sort: "severity", order: "asc", page: 1,
+      has_cve: false, kev: false, min_epss: 0, sort: "severity", order: "asc", page: 1,
     };
     const selected = new Set();
     let lastData = null;
@@ -559,10 +594,12 @@
     epss.addEventListener("change", debounce(() => { state.min_epss = Number(epss.value); state.page = 1; reload(); }, 200));
     const hascve = byId("f-hascve");
     hascve.addEventListener("change", () => { state.has_cve = hascve.checked; state.page = 1; reload(); });
+    const kevChk = byId("f-kev");
+    kevChk.addEventListener("change", () => { state.kev = kevChk.checked; state.page = 1; reload(); });
     byId("f-reset").addEventListener("click", () => {
       state.q = ""; state.sev.clear(); state.status.clear(); state.scanner = ""; state.asset_id = "";
-      state.has_cve = false; state.min_epss = 0; state.page = 1;
-      search.value = ""; assetSel.value = ""; scanSel.value = ""; hascve.checked = false; epss.value = 0; byId("epss-val").textContent = "0.00";
+      state.has_cve = false; state.kev = false; state.min_epss = 0; state.page = 1;
+      search.value = ""; assetSel.value = ""; scanSel.value = ""; hascve.checked = false; kevChk.checked = false; epss.value = 0; byId("epss-val").textContent = "0.00";
       document.querySelectorAll("#sev-chips .chip, #status-chips .chip").forEach((c) => c.classList.remove("active"));
       reload();
     });
@@ -573,6 +610,7 @@
     if (params.get("scanner")) { state.scanner = params.get("scanner"); scanSel.value = state.scanner; }
     if (params.get("q")) { state.q = params.get("q"); search.value = state.q; }
     if (params.get("has_cve") === "true") { state.has_cve = true; hascve.checked = true; }
+    if (params.get("kev") === "true") { state.kev = true; kevChk.checked = true; }
     if (params.get("min_epss")) {
       state.min_epss = Number(params.get("min_epss"));
       epss.value = state.min_epss; byId("epss-val").textContent = state.min_epss.toFixed(2);
@@ -598,6 +636,7 @@
       if (state.scanner) p.append("scanner", state.scanner);
       if (state.asset_id) p.set("asset_id", state.asset_id);
       if (state.has_cve) p.set("has_cve", "true");
+      if (state.kev) p.set("kev", "true");
       if (state.min_epss > 0) p.set("min_epss", String(state.min_epss));
       Object.assign({}, extra || {});
       for (const k in (extra || {})) p.set(k, extra[k]);
@@ -654,7 +693,7 @@
 
       const table = el("table", { class: "grid findings" }, [
         el("thead", {}, [el("tr", {}, [
-          headCheck, sortTh("Sév.", "severity"), th("Titre"), th("Asset"), th("Référence"),
+          headCheck, sortTh("Risque", "risk"), sortTh("Sév.", "severity"), th("Titre"), th("Asset"), th("Référence"),
           sortTh("EPSS", "epss"), sortTh("Statut", "status"), sortTh("MAJ", "last_seen"),
         ].filter(Boolean))]),
       ]);
@@ -666,8 +705,12 @@
             checkbox(selected.has(f.id), (on) => { on ? selected.add(f.id) : selected.delete(f.id); tr.classList.toggle("sel", on); renderBulkbar(); syncHeadCheck(); }),
           ]));
         }
+        tr.appendChild(el("td", {}, [riskBadge(f.risk, f.risk_band)]));
         tr.appendChild(el("td", {}, [sevBadge(f.severity)]));
-        tr.appendChild(el("td", { class: "title", text: f.title }));
+        const titleCell = el("td", { class: "title" }, [el("span", { text: f.title })]);
+        if (f.kev) titleCell.appendChild(kevBadge());
+        if (f.overdue) titleCell.appendChild(overdueBadge());
+        tr.appendChild(titleCell);
         tr.appendChild(el("td", { class: "muted nowrap", text: f.asset_name || "—" }));
         tr.appendChild(refCell(f));
         tr.appendChild(el("td", {}, [epssCell(f.epss_score)]));
@@ -695,7 +738,7 @@
       const arrow = active ? (state.order === "asc" ? " ▲" : " ▼") : "";
       return el("th", { class: "sortable" + (active ? " active" : ""), on: { click: () => {
         if (state.sort === key) state.order = state.order === "asc" ? "desc" : "asc";
-        else { state.sort = key; state.order = key === "epss" ? "desc" : "asc"; }
+        else { state.sort = key; state.order = (key === "epss" || key === "risk") ? "desc" : "asc"; }
         reload();
       } } }, [document.createTextNode(label + arrow)]);
     };
@@ -761,8 +804,12 @@
   function renderDrawer(host, d, close, reopen) {
     const f = d.finding;
     clear(host);
+    const titleRow = el("div", { class: "drawer-title-row" }, [sevBadge(f.severity), statusBadge(f.status)]);
+    if (f.risk != null) titleRow.appendChild(riskBadge(f.risk, f.risk_band));
+    if (f.kev) titleRow.appendChild(kevBadge());
+    if (f.overdue) titleRow.appendChild(overdueBadge());
     host.appendChild(el("div", { class: "drawer-head" }, [
-      el("div", { class: "drawer-title-row" }, [sevBadge(f.severity), statusBadge(f.status)]),
+      titleRow,
       el("button", { class: "drawer-close", type: "button", text: "✕", on: { click: close } }),
     ]));
     host.appendChild(el("h2", { class: "drawer-title", text: f.title }));
@@ -771,6 +818,7 @@
     const addMeta = (k, v) => { if (v == null || v === "") return; meta.appendChild(el("dt", { text: k })); meta.appendChild(el("dd", { text: String(v) })); };
     meta.appendChild(el("dt", { text: "Asset" }));
     meta.appendChild(el("dd", {}, [el("a", { class: "link", href: "/ui/assets/" + f.asset_id, text: f.asset_name || "—" })]));
+    if (f.criticality) { meta.appendChild(el("dt", { text: "Criticité asset" })); meta.appendChild(el("dd", {}, [critPill(f.criticality)])); }
     addMeta("Scanner", f.scanner);
     addMeta("CVE", f.cve);
     addMeta("Composant", f.component);
@@ -900,7 +948,7 @@
     const k = byId("kpis"); clear(k);
     k.appendChild(kpi(t.with_cve, "CVE suivies", "default", findingsHref({ has_cve: "true" })));
     k.appendChild(kpi(t.open, "Ouvertes", "default", findingsHref({ has_cve: "true", status: "open" })));
-    k.appendChild(kpi(t.unique_cves, "CVE uniques", "default"));
+    k.appendChild(kpi(t.kev_open || 0, "KEV (exploitées)", "critical", findingsHref({ kev: "true", status: "open" })));
     k.appendChild(kpi(t.exploitable, "Exploitables (EPSS≥.5)", "critical", findingsHref({ min_epss: "0.5", status: "open" })));
     k.appendChild(kpi(t.critical_open, "Critiques ouvertes", "critical", findingsHref({ has_cve: "true", severity: "critical", status: "open" })));
 
@@ -925,7 +973,10 @@
       [{ label: "Sév." }, { label: "CVE" }, { label: "Composant" }, { label: "Asset" }, { label: "EPSS" }],
       d.priority.map((f) => [
         sevBadge(f.severity),
-        el("a", { class: "ref link", href: findingsHref({ q: f.cve }), text: f.cve }),
+        el("span", { class: "cve-cell" }, [
+          el("a", { class: "ref link", href: findingsHref({ q: f.cve }), text: f.cve }),
+          f.kev ? kevBadge() : null,
+        ]),
         el("span", { class: "muted", text: f.component || "—" }),
         el("a", { class: "link", href: "/ui/assets/" + f.asset_id, text: f.asset_name }),
         epssCell(f.epss_score),
@@ -1055,7 +1106,23 @@
     bar.appendChild(svg("rect", { class: "hyg-fill " + cls, x: 0, y: 0, width: String(Math.max(2, score)), height: 8, rx: 4 }));
     return el("div", { class: "hyg-cell" }, [bar, el("span", { class: "hyg-num", text: String(score) })]);
   }
-  async function renderInventory() {
+  function criticalitySelect(assetId, current) {
+    const sel = el("select", { class: "crit-select crit-" + current });
+    ["crown", "high", "medium", "low"].forEach((c) => {
+      const o = el("option", { attrs: { value: c }, text: CRIT_LABEL[c] });
+      if (c === current) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", async () => {
+      try {
+        await apiSend("PATCH", "/ui/api/assets/" + assetId + "/criticality", { criticality: sel.value });
+        sel.className = "crit-select crit-" + sel.value;
+        toast("Criticité mise à jour", "ok");
+      } catch (e) { toast(e.message, "error"); }
+    });
+    return sel;
+  }
+  async function renderInventory(canWrite) {
     let d;
     try { d = await api("/ui/api/inventory"); }
     catch (e) { return toast("Impossible de charger les données : " + e.message); }
@@ -1068,10 +1135,11 @@
     k.appendChild(kpi(avgHyg, "Hygiène moyenne", avgHyg >= 70 ? "low" : avgHyg >= 40 ? "high" : "critical"));
 
     const host = byId("inventory-table"); clear(host);
-    const cols = [{ label: "Asset" }, { label: "Type" }, { label: "Pire" }, { label: "Ouv." }, { label: "Crit." }, { label: "Couverture scan" }, { label: "Hygiène" }, { label: "Dernier scan" }];
+    const cols = [{ label: "Asset" }, { label: "Type" }, { label: "Criticité" }, { label: "Pire" }, { label: "Ouv." }, { label: "Crit." }, { label: "Couverture scan" }, { label: "Hygiène" }, { label: "Dernier scan" }];
     const rows = d.items.map((a) => [
       el("a", { class: "link strong", href: "/ui/assets/" + a.id, text: a.name }),
       pill(a.type === "image" ? "image" : "dépôt", a.type === "image" ? "pill-image" : "pill-repo"),
+      canWrite ? criticalitySelect(a.id, a.criticality) : critPill(a.criticality),
       a.worst ? sevBadge(a.worst) : el("span", { class: "muted", text: "—" }),
       el("span", { class: a.open ? "count-open" : "muted", text: String(a.open) }),
       el("span", { class: a.critical ? "count-crit" : "muted", text: String(a.critical) }),
@@ -1083,16 +1151,121 @@
     host.appendChild(dataTable(cols, rows, "Aucun asset."));
   }
 
+  // ---- Posture & SLA (pilotage RBVM)
+
+  const RISK_BANDS = ["critical", "high", "medium", "low"];
+
+  // Flux divergent : decouvertes au-dessus de l'axe, corrigees en dessous.
+  function flowChart(series) {
+    if (!series.length) return empty("Pas de données.");
+    const max = Math.max(1, ...series.map((d) => Math.max(d.opened, d.closed)));
+    const n = series.length;
+    const slot = 100 / n;
+    const bw = Math.min(slot * 0.7, 3.2);
+    const mid = 21, half = 18;
+    const s = svg("svg", { viewBox: "0 0 100 42", preserveAspectRatio: "none", class: "timeline" });
+    s.appendChild(svg("line", { class: "flow-axis", x1: 0, y1: mid, x2: 100, y2: mid }));
+    series.forEach((d, i) => {
+      const x = i * slot + (slot - bw) / 2;
+      if (d.opened) {
+        const h = (d.opened / max) * half;
+        const r = svg("rect", { class: "flow-opened", x: x.toFixed(2), y: (mid - h).toFixed(2), width: bw.toFixed(2), height: h.toFixed(2) });
+        r.appendChild(svgTitle(d.date + " · découvertes : " + d.opened));
+        s.appendChild(r);
+      }
+      if (d.closed) {
+        const h = (d.closed / max) * half;
+        const r = svg("rect", { class: "flow-closed", x: x.toFixed(2), y: mid.toFixed(2), width: bw.toFixed(2), height: h.toFixed(2) });
+        r.appendChild(svgTitle(d.date + " · corrigées : " + d.closed));
+        s.appendChild(r);
+      }
+    });
+    const idxs = n === 1 ? [0] : [0, Math.floor(n / 2), n - 1];
+    const axis = el("div", { class: "timeline-axis" }, idxs.map((i) => el("span", { text: series[i].date.slice(5) })));
+    const legend = el("div", { class: "bar-legend" }, [
+      el("span", { class: "bar-legend-item" }, [el("span", { class: "dot dot-opened" }), el("span", { text: "Découvertes" })]),
+      el("span", { class: "bar-legend-item" }, [el("span", { class: "dot dot-closed" }), el("span", { text: "Corrigées" })]),
+    ]);
+    return el("div", {}, [s, axis, legend]);
+  }
+
+  async function renderPosture() {
+    let d;
+    try { d = await api("/ui/api/posture"); }
+    catch (e) { return toast("Impossible de charger les données : " + e.message); }
+    const t = d.totals;
+    const k = byId("kpis"); clear(k);
+    k.appendChild(kpi(t.overdue, "SLA dépassé", "critical", findingsHref({ status: "open" })));
+    k.appendChild(kpi(t.due_soon, "Échéance < 3j", "high"));
+    k.appendChild(kpiText(t.mttr != null ? t.mttr + " j" : "—", "MTTR (correction)", "default"));
+    k.appendChild(kpiText(t.sla_compliance != null ? t.sla_compliance + " %" : "—", "Conformité SLA",
+      t.sla_compliance != null && t.sla_compliance >= 90 ? "low" : "high"));
+    k.appendChild(kpi(t.kev_open, "KEV ouverts", "critical", findingsHref({ kev: "true", status: "open" })));
+    k.appendChild(kpi(t.open_total, "Ouverts", "default", findingsHref({ status: "open" })));
+
+    // Distribution du risque (donut : les bandes reprennent les couleurs de sévérité)
+    const dh = byId("risk-donut"); clear(dh);
+    dh.appendChild(donut(d.risk.bands, d.risk.open_total));
+    const legend = byId("risk-legend"); clear(legend);
+    RISK_BANDS.forEach((b) => {
+      legend.appendChild(el("li", {}, [el("span", { class: "legend-item" }, [
+        el("span", { class: "dot sev-bg-" + b }),
+        el("span", { class: "legend-name", text: RISK_LABEL[b] }),
+        el("span", { class: "legend-val", text: String(d.risk.bands[b] || 0) }),
+      ])]));
+    });
+
+    byId("flow-chart").appendChild(flowChart(d.flow));
+
+    // En retard par sévérité
+    const ov = byId("overdue-sev"); clear(ov);
+    const ovItems = SEVERITIES.filter((s) => (d.sla.overdue_by_severity[s] || 0) > 0).map((s) => ({
+      label: SEV_LABEL[s], value: d.sla.overdue_by_severity[s], cls: "hbar-fill sev-fill-" + s,
+      badge: sevBadge(s), href: findingsHref({ severity: s, status: "open" }),
+      tip: SEV_LABEL[s] + " en retard : " + d.sla.overdue_by_severity[s],
+    }));
+    ov.appendChild(ovItems.length ? hbars(ovItems) : empty("Aucun finding en retard. 🎉"));
+
+    // MTTR par sévérité
+    const mt = byId("mttr-sev"); clear(mt);
+    const mttrItems = SEVERITIES.filter((s) => d.mttr.by_severity[s] != null).map((s) => ({
+      label: SEV_LABEL[s], value: d.mttr.by_severity[s], cls: "hbar-fill sev-fill-" + s,
+      badge: sevBadge(s), tip: SEV_LABEL[s] + " : " + d.mttr.by_severity[s] + " jours",
+    }));
+    mt.appendChild(mttrItems.length ? hbars(mttrItems) : empty("Aucune remédiation enregistrée."));
+
+    // Top risques
+    const tr = byId("top-risk"); clear(tr);
+    tr.appendChild(dataTable(
+      [{ label: "Risque" }, { label: "Sév." }, { label: "Menace" }, { label: "Vulnérabilité" }, { label: "Asset" }, { label: "CVE" }, { label: "EPSS" }],
+      d.risk.top.map((f) => [
+        riskBadge(f.risk, f.risk_band),
+        sevBadge(f.severity),
+        el("span", { class: "threat-cell" }, [f.kev ? kevBadge() : el("span", { class: "muted", text: "—" })]),
+        el("span", { class: "title", text: f.title }),
+        el("span", { class: "asset-crit" }, [
+          el("a", { class: "link", href: "/ui/assets/" + f.asset_id, text: f.asset_name }),
+          critPill(f.criticality),
+        ]),
+        f.cve ? el("a", { class: "ref link", href: findingsHref({ q: f.cve }), text: f.cve }) : el("span", { class: "muted", text: "—" }),
+        epssCell(f.epss_score),
+      ]),
+      "Aucun risque ouvert. 🎉"
+    ));
+  }
+
   // -------------------------------------------------------------- amorçage
 
   const script = document.currentScript || document.querySelector('script[data-page]');
   const page = script && script.getAttribute("data-page");
+  const canWrite = script && script.getAttribute("data-can-write") === "true";
   if (page === "overview") renderOverview();
   else if (page === "asset") renderAsset(script.getAttribute("data-asset-id"));
-  else if (page === "findings") renderFindings(script.getAttribute("data-can-write") === "true");
+  else if (page === "findings") renderFindings(canWrite);
   else if (page === "vulnerabilities") renderVulnDetection();
   else if (page === "sca") renderSca();
   else if (page === "secrets") renderSecrets();
   else if (page === "attack") renderAttack();
-  else if (page === "inventory") renderInventory();
+  else if (page === "inventory") renderInventory(canWrite);
+  else if (page === "posture") renderPosture();
 })();
