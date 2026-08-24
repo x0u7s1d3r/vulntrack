@@ -16,10 +16,17 @@ def _create_user(db_session, username="webuser", role="viewer", is_active=True):
     return user
 
 
+def _login_csrf(client):
+    """Recupere le jeton anti-CSRF du formulaire de login (pose lors du GET)."""
+    client.get("/ui/login")
+    return client.cookies.get("vulntrack_login_csrf")
+
+
 def _login(client, username="webuser"):
+    csrf = _login_csrf(client)
     return client.post(
         "/ui/login",
-        data={"username": username, "password": PASSWORD},
+        data={"username": username, "password": PASSWORD, "csrf_token": csrf},
         follow_redirects=False,
     )
 
@@ -86,9 +93,26 @@ def test_asset_page_unknown_returns_404(client, db_session):
 
 def test_login_bad_credentials_returns_401(client, db_session):
     _create_user(db_session)
-    response = client.post("/ui/login", data={"username": "webuser", "password": "faux"}, follow_redirects=False)
+    csrf = _login_csrf(client)
+    response = client.post(
+        "/ui/login",
+        data={"username": "webuser", "password": "faux", "csrf_token": csrf},
+        follow_redirects=False,
+    )
     assert response.status_code == 401
     assert "Identifiants invalides" in response.text
+
+
+def test_login_without_csrf_token_is_rejected(client, db_session):
+    # Sans jeton anti-CSRF (ni cookie ni champ), le POST est refuse : c'est la
+    # protection contre le login CSRF.
+    _create_user(db_session)
+    response = client.post(
+        "/ui/login",
+        data={"username": "webuser", "password": PASSWORD},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
 
 
 def test_login_sets_httponly_cookie(client, db_session):
@@ -111,7 +135,12 @@ def test_logout_clears_cookie(client, db_session):
 
 def test_inactive_user_cannot_login(client, db_session):
     _create_user(db_session, username="disabled", is_active=False)
-    response = client.post("/ui/login", data={"username": "disabled", "password": PASSWORD}, follow_redirects=False)
+    csrf = _login_csrf(client)
+    response = client.post(
+        "/ui/login",
+        data={"username": "disabled", "password": PASSWORD, "csrf_token": csrf},
+        follow_redirects=False,
+    )
     assert response.status_code == 401
 
 
