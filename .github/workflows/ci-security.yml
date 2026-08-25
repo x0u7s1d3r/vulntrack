@@ -60,3 +60,25 @@ jobs:
         # -ll : ne remonte que la sévérité moyenne et plus ; sort en erreur si
         # un problème est trouvé → gate.
         run: bandit -r app -ll
+
+  sca:
+    name: SCA — dépendances
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer pip-audit
+        run: pip install -r requirements-dev.txt
+
+      - name: pip-audit (dépendances de prod)
+        # Échoue si une dépendance de requirements.txt a une CVE connue.
+        # Le jour où une vuln n'a pas de correctif, on l'ignorera nommément
+        # avec --ignore-vuln <ID> (décision de risque documentée).
+        run: pip-audit -r requirements.txt

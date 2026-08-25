@@ -3,3 +3,4 @@ pytest-cov==7.1.0
 ruff==0.16.3
 bandit==1.9.4
 semgrep==1.174.0
+pip-audit==2.10.1
