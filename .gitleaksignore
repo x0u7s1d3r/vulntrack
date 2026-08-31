@@ -1,0 +1,7 @@
+# Faux secret de test (cle AWS factice) dans tests/test_parsers.py : sert a
+# verifier que le parser Gitleaks ne stocke JAMAIS la valeur du secret.
+# Ce n'est pas un vrai identifiant -> ignore, de facon documentee.
+ab6232d9d7f71fd2fce70955d9a22db0e9f7f554:tests/test_parsers.py:aws-access-token:85
+ab6232d9d7f71fd2fce70955d9a22db0e9f7f554:tests/test_parsers.py:aws-access-token:86
+ab6232d9d7f71fd2fce70955d9a22db0e9f7f554:tests/test_parsers.py:aws-access-token:96
+ab6232d9d7f71fd2fce70955d9a22db0e9f7f554:tests/test_parsers.py:aws-access-token:97

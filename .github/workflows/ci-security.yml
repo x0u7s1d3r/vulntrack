@@ -82,3 +82,26 @@ jobs:
         # Le jour où une vuln n'a pas de correctif, on l'ignorera nommément
         # avec --ignore-vuln <ID> (décision de risque documentée).
         run: pip-audit -r requirements.txt
+
+  secrets:
+    name: Secrets — Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code (historique complet)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # indispensable : Gitleaks scanne TOUT l'historique,
+                           # pas seulement le dernier commit (clone superficiel par défaut)
+
+      - name: Installer Gitleaks
+        run: |
+          VERSION=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: Détection de secrets (historique complet)
+        # Lit .gitleaksignore automatiquement ; sort en erreur si une fuite
+        # non listée est trouvée → gate.
+        run: gitleaks detect --source . --redact -v
+
