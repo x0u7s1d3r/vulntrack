@@ -73,6 +73,8 @@ logger = logging.getLogger(__name__)
 SESSION_COOKIE = "vulntrack_session"
 CSRF_COOKIE = "vulntrack_csrf"
 CSRF_HEADER = "X-CSRF-Token"
+# Jeton anti-CSRF du formulaire de connexion (protection pre-authentification).
+LOGIN_CSRF_COOKIE = "vulntrack_login_csrf"
 # Roles autorises a modifier (triage) : le viewer reste en lecture seule.
 WRITE_ROLES = {"admin", "analyst"}
 
@@ -147,12 +149,33 @@ def require_action_user(request: Request, db: Session = Depends(get_db)) -> mode
 # ------------------------------------------------------------- authentification
 
 
+def _render_login(request: Request, error: str | None = None,
+                  status_code: int = status.HTTP_200_OK):
+    """Rend la page de login en posant un jeton anti-CSRF pre-authentification.
+
+    Le meme jeton aleatoire est (1) place dans un cookie HttpOnly et (2) injecte
+    dans un champ cache du formulaire. Au POST on exige que les deux coincident :
+    un site tiers ne peut ni lire le cookie (HttpOnly + cross-origin) ni deviner
+    le champ, donc il ne peut pas forger une paire valide. C'est ce qui protege
+    du "login CSRF" (forcer la victime a se connecter avec un compte piege)."""
+    token = secrets.token_urlsafe(32)
+    response = templates.TemplateResponse(
+        request, "login.html", {"error": error, "csrf_token": token},
+        status_code=status_code,
+    )
+    response.set_cookie(
+        key=LOGIN_CSRF_COOKIE, value=token, httponly=True,
+        secure=_cookie_secure(), samesite="lax", max_age=1800, path="/ui",
+    )
+    return response
+
+
 @router.get("/login", response_class=HTMLResponse)
 def login_form(request: Request, db: Session = Depends(get_db)):
     # Deja connecte : filer directement au tableau de bord.
     if _user_from_cookie(request, db) is not None:
         return RedirectResponse(url="/ui", status_code=status.HTTP_303_SEE_OTHER)
-    return templates.TemplateResponse(request, "login.html", {"error": None})
+    return _render_login(request)
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -160,16 +183,23 @@ def login_submit(
     request: Request,
     username: str = Form(),
     password: str = Form(),
+    csrf_token: str = Form(""),
     db: Session = Depends(get_db),
 ):
+    # Anti-CSRF AVANT tout : le champ cache doit egaler le cookie pose au GET.
+    # compare_digest = comparaison a temps constant (pas de fuite par timing).
+    cookie = request.cookies.get(LOGIN_CSRF_COOKIE, "")
+    if not cookie or not csrf_token or not hmac.compare_digest(csrf_token, cookie):
+        return _render_login(
+            request, "Session expirée, merci de réessayer.",
+            status.HTTP_403_FORBIDDEN,
+        )
+
     user = db.query(models.User).filter_by(username=username).first()
     if not user or not user.is_active or not verify_password(password, user.hashed_password):
         # Message volontairement generique : ne pas reveler si le compte existe.
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {"error": "Identifiants invalides."},
-            status_code=status.HTTP_401_UNAUTHORIZED,
+        return _render_login(
+            request, "Identifiants invalides.", status.HTTP_401_UNAUTHORIZED,
         )
 
     token = create_access_token(subject=user.username, role=user.role)
@@ -179,13 +209,12 @@ def login_submit(
         key=SESSION_COOKIE, value=token, httponly=True, secure=_cookie_secure(),
         samesite="lax", max_age=max_age, path="/ui",
     )
-    # Jeton CSRF (double-submit) : lisible par le JS (httponly=False) pour
-    # etre renvoye en en-tete X-CSRF-Token. Un site tiers ne peut ni lire ce
-    # cookie ni forger l'en-tete ; combine a SameSite=Lax, cela bloque le CSRF.
     response.set_cookie(
         key=CSRF_COOKIE, value=secrets.token_urlsafe(32), httponly=False,
         secure=_cookie_secure(), samesite="lax", max_age=max_age, path="/ui",
     )
+    # Le jeton de login a servi : on le retire.
+    response.delete_cookie(LOGIN_CSRF_COOKIE, path="/ui")
     logger.info("Connexion web reussie: %s", user.username)
     return response
 
@@ -196,7 +225,6 @@ def logout():
     response.delete_cookie(SESSION_COOKIE, path="/ui")
     response.delete_cookie(CSRF_COOKIE, path="/ui")
     return response
-
 
 # ------------------------------------------------------------- pages (coquilles)
 

@@ -12,7 +12,13 @@ def _user(db_session, username, role):
 
 
 def _login(client, username):
-    client.post("/ui/login", data={"username": username, "password": PASSWORD}, follow_redirects=False)
+    client.get("/ui/login")  # pose le cookie + jeton anti-CSRF de login
+    csrf = client.cookies.get("vulntrack_login_csrf")
+    client.post(
+        "/ui/login",
+        data={"username": username, "password": PASSWORD, "csrf_token": csrf},
+        follow_redirects=False,
+    )
 
 
 def _csrf(client):
