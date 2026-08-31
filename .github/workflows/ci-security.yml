@@ -10,6 +10,9 @@ jobs:
   qualite:
     name: Qualité — lint & tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
@@ -133,3 +136,20 @@ jobs:
         with:
           name: sbom-vulntrack
           path: sbom.cdx.json
+
+      - name: Se connecter à GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Taguer et publier l'image sur GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}
+          docker tag vulntrack:ci $IMAGE:${{ github.sha }}
+          docker tag vulntrack:ci $IMAGE:latest
+          docker push $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
