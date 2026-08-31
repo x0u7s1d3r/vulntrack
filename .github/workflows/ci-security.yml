@@ -105,3 +105,23 @@ jobs:
         # non listée est trouvée → gate.
         run: gitleaks detect --source . --redact -v
 
+
+
+  livraison:
+    name: Livraison — build & scan de l'image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Construire l'image Docker
+        run: docker build -t vulntrack:ci .
+
+      - name: Installer Trivy
+        run: |
+          VERSION=0.74.0
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sudo sh -s -- -b /usr/local/bin "v${VERSION}"
+
+      - name: Scanner l'image (gate HIGH/CRITICAL corrigeables)
+        run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 vulntrack:ci
