@@ -125,3 +125,11 @@ jobs:
 
       - name: Scanner l'image (gate HIGH/CRITICAL corrigeables)
         run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 vulntrack:ci
+      - name: Générer le SBOM (CycloneDX)
+        run: trivy image --format cyclonedx --output sbom.cdx.json vulntrack:ci
+
+      - name: Publier le SBOM comme artefact de build
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-vulntrack
+          path: sbom.cdx.json
