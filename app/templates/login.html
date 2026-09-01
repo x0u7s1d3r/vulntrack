@@ -7,16 +7,8 @@
   {% if error %}
   <p class="error" role="alert">{{ error }}</p>
   {% endif %}
-
-  {# Login CSRF traite par un jeton pre-auth (cookie HttpOnly + champ cache
-     ci-dessous, valides au POST dans login_submit). La regle ci-dessous est
-     specifique a Django ({% csrf_token %}) et ne s'applique pas a FastAPI/Jinja. #}
-  <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -->
   <form method="post" action="/ui/login">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  </form>
-
-  <form method="post" action="/ui/login">
     <label for="username">Nom d'utilisateur</label>
     <input id="username" name="username" type="text" autocomplete="username" required autofocus>
 
