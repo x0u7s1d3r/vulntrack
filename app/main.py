@@ -384,3 +384,14 @@ def get_scan(request: Request, scan_id: int, db: Session = Depends(get_db)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan introuvable")
     return scan
+
+
+@app.middleware("http")
+async def no_cache_static_in_dev(request: Request, call_next):
+    """En developpement, empeche le navigateur de mettre en cache les fichiers
+    statiques (/ui/static) : chaque modif de app.js/style.css est prise sans
+    vider le cache. En production, le cache normal s'applique (performance)."""
+    response = await call_next(request)
+    if settings.environment == "development" and request.url.path.startswith("/ui/static"):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
