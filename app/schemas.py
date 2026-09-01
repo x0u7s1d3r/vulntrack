@@ -171,3 +171,60 @@ class CriticalityChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     criticality: AssetCriticality
+
+
+# ------------------------------------------------------- cibles d'auto-scan (16e)
+from pydantic import model_validator  # noqa: E402
+
+_ALLOWED_SCANNERS = {
+    "image": {"trivy"},
+    "repository": {"trivy", "semgrep", "gitleaks"},
+}
+
+
+class ScanTargetType(str, Enum):
+    IMAGE = "image"
+    REPOSITORY = "repository"
+
+
+class ScanTargetCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    target_type: ScanTargetType
+    reference: str = Field(min_length=1, max_length=500)
+    scanners: list[ScannerType] = Field(min_length=1)
+    schedule: str | None = Field(default=None, max_length=100)
+
+    @field_validator("name", "reference")
+    @classmethod
+    def _clean(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("valeur vide")
+        if any(c in v for c in ["\n", "\r", "\x00"]):
+            raise ValueError("caracteres de controle interdits")
+        return v
+
+    @field_validator("schedule")
+    @classmethod
+    def _valid_cron(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        from croniter import croniter
+        if not croniter.is_valid(v):
+            raise ValueError("expression cron invalide")
+        return v
+
+    @model_validator(mode="after")
+    def _scanners_match_type(self):
+        allowed = _ALLOWED_SCANNERS[self.target_type.value]
+        bad = [s.value for s in self.scanners if s.value not in allowed]
+        if bad:
+            raise ValueError(
+                f"scanners incompatibles avec {self.target_type.value}: {', '.join(bad)}"
+            )
+        return self

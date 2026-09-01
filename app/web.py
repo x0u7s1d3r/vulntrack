@@ -705,3 +705,88 @@ def api_export_csv(
     buf.seek(0)
     headers = {"Content-Disposition": 'attachment; filename="vulntrack-findings.csv"'}
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv", headers=headers)
+
+
+# ------------------------------------------------------- cibles d'auto-scan (16e)
+def _scan_target_row(t: models.ScanTarget) -> dict:
+    return {
+        "id": t.id,
+        "name": t.name,
+        "target_type": t.target_type,
+        "reference": t.reference,
+        "scanners": [s for s in t.scanners.split(",") if s],
+        "schedule": t.schedule,
+        "enabled": t.enabled,
+        "last_scan_at": t.last_scan_at.isoformat() if t.last_scan_at else None,
+        "last_status": t.last_status,
+    }
+
+
+@router.get("/scan-targets", response_class=HTMLResponse)
+def scan_targets_page(request: Request, user: models.User = Depends(current_web_user)):
+    return templates.TemplateResponse(
+        request, "scan_targets.html", _page_ctx(user, active="scan-targets")
+    )
+
+
+@router.get("/api/scan-targets")
+def api_list_scan_targets(
+    user: models.User = Depends(current_api_user),
+    db: Session = Depends(get_db),
+):
+    targets = db.query(models.ScanTarget).order_by(models.ScanTarget.name).all()
+    return {
+        "can_write": user.role in WRITE_ROLES,
+        "targets": [_scan_target_row(t) for t in targets],
+    }
+
+
+@router.post("/api/scan-targets", status_code=201)
+def api_create_scan_target(
+    payload: schemas.ScanTargetCreate,
+    user: models.User = Depends(require_action_user),
+    db: Session = Depends(get_db),
+):
+    if db.query(models.ScanTarget).filter_by(name=payload.name).first():
+        raise HTTPException(status_code=409, detail="Une cible porte déjà ce nom")
+    target = models.ScanTarget(
+        name=payload.name,
+        target_type=payload.target_type.value,
+        reference=payload.reference,
+        scanners=",".join(s.value for s in payload.scanners),
+        schedule=payload.schedule,
+    )
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+    logger.info("Cible de scan creee: %s (%s)", target.name, target.target_type)
+    return _scan_target_row(target)
+
+
+@router.post("/api/scan-targets/{target_id}/scan")
+def api_run_scan_target(
+    target_id: int,
+    user: models.User = Depends(require_action_user),
+    db: Session = Depends(get_db),
+):
+    target = db.get(models.ScanTarget, target_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Cible introuvable")
+    from app.queue import ingest_queue
+    ingest_queue.enqueue("app.scanning.scan_target", target.id)
+    logger.info("Scan a la demande enfile pour la cible %s", target.name)
+    return {"status": "queued", "target_id": target.id}
+
+
+@router.delete("/api/scan-targets/{target_id}")
+def api_delete_scan_target(
+    target_id: int,
+    user: models.User = Depends(require_action_user),
+    db: Session = Depends(get_db),
+):
+    target = db.get(models.ScanTarget, target_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="Cible introuvable")
+    db.delete(target)
+    db.commit()
+    return {"status": "deleted"}

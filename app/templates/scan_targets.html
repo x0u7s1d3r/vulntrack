@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Cibles de scan — VulnTrack{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Cibles de scan</h1>
+  <p class="subtitle">VulnTrack scanne lui-même ces cibles et ingère les résultats dans le pipeline.</p>
+</div>
+
+{% if can_write %}
+<section class="card">
+  <h2 class="card-title">Ajouter une cible</h2>
+  <div class="st-form">
+    <input id="st-name" type="text" placeholder="Nom (= asset)">
+    <select id="st-type">
+      <option value="image">Image</option>
+      <option value="repository">Dépôt git</option>
+    </select>
+    <input id="st-ref" type="text" placeholder="nginx:1.25  ou  https://github.com/x/y.git">
+    <input id="st-schedule" type="text" placeholder="Cron (optionnel) ex. 0 2 * * *">
+    <div id="st-scanners" class="st-scanners"></div>
+    <button id="st-add" class="btn btn-primary" type="button">Ajouter</button>
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2 class="card-title">Cibles enregistrées</h2>
+  <div id="st-table"></div>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+{% endblock %}
+{% block scripts %}
+<script src="/ui/static/app.js" data-page="scan-targets" data-can-write="{{ 'true' if can_write else 'false' }}" defer></script>
+{% endblock %}
