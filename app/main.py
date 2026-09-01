@@ -90,7 +90,19 @@ if settings.cors_origin_list:
 # Frontend web (etape 13) : CSS statique en same-origin (CSP inchangee) et
 # routeur de consultation en lecture seule sous /ui.
 _WEB_STATIC = Path(__file__).resolve().parent / "static"
-app.mount("/ui/static", StaticFiles(directory=str(_WEB_STATIC)), name="web-static")
+class _NoCacheStaticFiles(StaticFiles):
+    """En dev, empeche la mise en cache navigateur des statiques (app.js/style.css)."""
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if get_settings().environment == "development":
+            response.headers["Cache-Control"] = "no-store"
+            for _h in ("etag", "last-modified"):
+                if _h in response.headers:
+                    del response.headers[_h]
+        return response
+
+
+app.mount("/ui/static", _NoCacheStaticFiles(directory=str(_WEB_STATIC)), name="web-static")
 app.include_router(web_router)
 
 
@@ -384,14 +396,3 @@ def get_scan(request: Request, scan_id: int, db: Session = Depends(get_db)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan introuvable")
     return scan
-
-
-@app.middleware("http")
-async def no_cache_static_in_dev(request: Request, call_next):
-    """En developpement, empeche le navigateur de mettre en cache les fichiers
-    statiques (/ui/static) : chaque modif de app.js/style.css est prise sans
-    vider le cache. En production, le cache normal s'applique (performance)."""
-    response = await call_next(request)
-    if settings.environment == "development" and request.url.path.startswith("/ui/static"):
-        response.headers["Cache-Control"] = "no-cache, must-revalidate"
-    return response
