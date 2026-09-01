@@ -1,475 +1,252 @@
-# VulnTrack
+<div align="center">
 
-Plateforme légère de centralisation et de suivi des vulnérabilités applicatives.
+# 🛡️ VulnTrack
 
-VulnTrack agrège les rapports de plusieurs scanners de sécurité (Trivy, pip-audit, Bandit, OWASP ZAP), déduplique les résultats et suit le cycle de vie de chaque vulnérabilité dans le temps.
+**Risk-Based Vulnerability Management — multi-scanner ingestion, EPSS/KEV enrichment, a full triage console, and a security-gated CI/CD pipeline that ships a signed, scanned image.**
 
----
+**Gestion des vulnérabilités basée sur le risque — ingestion multi-scanner, enrichissement EPSS/KEV, console de triage complète, et pipeline CI/CD sécurisé qui livre une image scannée et publiée.**
 
-## Le problème
+[![CI Sécurité](https://github.com/x0u7s1d3r/vulntrack/actions/workflows/ci-security.yml/badge.svg)](https://github.com/x0u7s1d3r/vulntrack/actions/workflows/ci-security.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](#-license--licence)
+![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker%20Compose-2496ED.svg?logo=docker&logoColor=white)
+[![GHCR](https://img.shields.io/badge/ghcr.io-vulntrack-blue.svg?logo=github)](https://github.com/x0u7s1d3r/vulntrack/pkgs/container/vulntrack)
 
-Scanner est facile. Exploiter les résultats ne l'est pas.
+**[🇬🇧 English](#-english) · [🇫🇷 Français](#-français)**
 
-Chaque exécution de pipeline republie les mêmes milliers de lignes de JSON. Trois scanners différents remontent la même CVE sous trois formats différents. Sans consolidation, le bruit noie les vulnérabilités qui comptent réellement, et personne ne corrige rien.
-
-VulnTrack transforme ce flux brut en findings uniques, priorisés et suivis dans la durée.
-
----
-
-## Fonctionnalités
-
-- Ingestion de rapports multi-scanners au format JSON : Trivy (SCA/images), Semgrep (SAST), Gitleaks (secrets)
-- Déduplication par empreinte SHA-256, scopée par scanner (CVE + composant pour Trivy, règle + emplacement dans le code pour Semgrep/Gitleaks)
-- Score EPSS (probabilité d'exploitation réelle, FIRST.org) sur les findings avec CVE, en complément de la sévérité CVSS
-- Suivi du cycle de vie : `open`, `in_progress`, `fixed`, `accepted`, `false_positive`
-- Détection automatique des vulnérabilités corrigées entre deux scans
-- Ingestion asynchrone via file de messages, conçue pour absorber les pics de charge
-- API REST documentée automatiquement (OpenAPI / Swagger)
-- Authentification par clé d'API (ingestion machine-à-machine) et par comptes utilisateurs JWT avec rôles (admin / analyst / viewer)
-- Limitation de débit par client
-- Observabilité : métriques RED et métier au format Prometheus, tableau de bord Grafana provisionné
-- Notifications Slack / webhook sur les nouveaux findings au-dessus d'un seuil de sévérité
-- Sauvegarde et restauration scriptées et documentées
-- Console web de gestion : tableau de bord, workspace de findings, triage (statuts + notes + audit), actions en masse, export CSV
+</div>
 
 ---
 
-## Stack technique
+## 📸 Aperçu / Screenshots
+
+<div align="center">
+
+| Tableau de bord / Dashboard | Workspace Findings |
+| :---: | :---: |
+| ![Dashboard](docs/img/dashboard.png) | ![Findings](docs/img/findings.png) |
+| **Posture & SLA (RBVM)** | **MITRE ATT&CK** |
+| ![Posture](docs/img/posture.png) | ![ATT&CK](docs/img/attack.png) |
+
+</div>
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    subgraph clients [Clients]
+        CI["CI / Pipelines"]
+        Analyst["Analysts / Devs"]
+    end
+
+    CI -->|"POST /scans/ingest<br/>(API key)"| TR
+    Analyst -->|"/ui console<br/>(JWT + RBAC)"| TR
+
+    TR["Traefik v3.7<br/>load balancer + retry"] --> API["FastAPI API<br/>(N stateless replicas)"]
+
+    API --> PGB["PgBouncer<br/>connection pool"]
+    PGB --> DB[("PostgreSQL 16")]
+    API --> REDIS[("Redis<br/>queue + cache")]
+
+    REDIS --> WORKER["RQ Worker"]
+    WORKER --> DB
+    WORKER -->|"EPSS (FIRST.org)<br/>KEV (CISA)"| ENRICH{{"Enrichment"}}
+    WORKER -->|"Slack / webhook"| NOTIF{{"Notifications"}}
+
+    API -.->|"/metrics"| PROM["Prometheus"]
+    WORKER -.->|":9100"| PROM
+    PROM --> GRAF["Grafana"]
+```
+
+VulnTrack is a **stateless FastAPI service** behind Traefik, backed by PostgreSQL and Redis. Scan reports are ingested through a message queue and processed asynchronously by an RQ worker, which enriches findings with **EPSS** (real-world exploitation probability) and **KEV** (CISA Known Exploited Vulnerabilities), then computes a risk score. The whole stack runs on Docker Compose and is fully observable via Prometheus + Grafana.
+
+---
+
+## 🔒 CI/CD Security Pipeline
+
+Every push and pull request runs a **shift-left security pipeline** as a blocking gate. A pull request cannot be merged into `main` unless all four gates are green (enforced by a branch protection ruleset). On merge to `main`, the delivery stage builds, scans, inventories, and publishes the image.
+
+```mermaid
+flowchart TB
+    START["Push / Pull Request"] --> GATES
+
+    subgraph GATES ["Security gates — blocking"]
+        direction LR
+        Q["Quality<br/>ruff + pytest"]
+        S["SAST<br/>Semgrep + Bandit"]
+        C["SCA<br/>pip-audit"]
+        SEC["Secrets<br/>Gitleaks (full history)"]
+    end
+
+    GATES -->|"only on main"| DELIV
+
+    subgraph DELIV ["Delivery"]
+        direction LR
+        B["Build image"] --> T["Trivy image scan<br/>(HIGH/CRITICAL gate)"]
+        T --> SBOM["SBOM<br/>(CycloneDX)"]
+        SBOM --> PUB[("Publish → GHCR")]
+    end
+```
+
+| Stage | Tool | What it catches |
+| --- | --- | --- |
+| **Quality** | ruff + pytest | Lint errors, failing tests |
+| **SAST** | Semgrep + Bandit | Insecure code patterns |
+| **SCA** | pip-audit | Vulnerable Python dependencies |
+| **Secrets** | Gitleaks | Hard-coded credentials (scans full git history) |
+| **Delivery** | Trivy + CycloneDX | Vulnerable OS/lib layers in the final image, full SBOM, publish to GHCR |
+
+---
+
+## 🇬🇧 English
+
+### The problem
+
+Scanning is easy. Acting on the results is not. Every pipeline run republishes the same thousands of lines of JSON; three scanners report the same CVE in three different shapes. Without consolidation, the noise buries the vulnerabilities that actually matter — and nothing gets fixed.
+
+VulnTrack turns that raw stream into **unique, prioritized, time-tracked findings**, and adds a **risk-based** layer on top so you always know what to fix first.
+
+### Key features
+
+- **Multi-scanner ingestion** — Trivy (SCA/images), Semgrep (SAST), Gitleaks (secrets), deduplicated by a scanner-scoped SHA-256 fingerprint so continuous rescans never create duplicates.
+- **Risk-Based Vulnerability Management (RBVM)** — a composite risk score (severity × EPSS × KEV × asset criticality, 0–100 with bands), editable business criticality per asset, SLA policy and **MTTR** computed from the audit trail, and a **Posture & SLA** page (risk distribution, remediation burndown, overdue tracking).
+- **Triage console** (`/ui`) — dashboard, a full findings workspace with combinable filters, faceted search, bulk actions and CSV export, status lifecycle with **audited** justifications, plus five Wazuh-style modules: Vulnerability Detection (CVE/EPSS), SAST, Secrets, **MITRE ATT&CK** mapping, and System Inventory.
+- **Enrichment** — EPSS (FIRST.org) and KEV (CISA) so prioritization reflects real-world exploitation, not just CVSS.
+- **Executive PDF report** — one-click risk posture summary (ReportLab).
+- **Production-grade platform** — high availability (Traefik load balancing + retry, stateless replicas, PgBouncer), observability (Prometheus RED + business metrics, provisioned Grafana), Slack/webhook notifications, scripted backup & restore.
+- **Security by design** — HttpOnly session cookie, double-submit CSRF, server-side RBAC (admin/analyst/viewer), strict CSP, anti-XSS rendering via `textContent`, non-root container.
+
+### Quickstart
+
+```bash
+git clone https://github.com/x0u7s1d3r/vulntrack.git
+cd vulntrack
+cp .env.example .env
+
+docker compose up -d
+
+docker compose exec api python -m scripts.create_admin --username amiir --password "a-strong-password"
+```
+
+Then open:
+
+- **Console** → http://localhost:8001/ui
+- **API docs (Swagger)** → http://localhost:8001/docs
+- **Grafana** → http://localhost:3001
+
+Pull the published image directly:
+
+```bash
+docker pull ghcr.io/x0u7s1d3r/vulntrack:latest
+```
+
+### Tech stack
+
+| Domain | Technologies |
+| --- | --- |
+| API | Python 3.12, FastAPI, SQLAlchemy, Pydantic, Alembic |
+| Data | PostgreSQL 16, Redis, RQ (worker) |
+| Enrichment | EPSS (FIRST.org), KEV (CISA) |
+| Frontend | Server-rendered shells + vanilla JS (no external CDN), strict CSP |
+| Containers | Docker, Docker Compose, multi-stage hardened image (non-root) |
+| Load balancing / HA | Traefik v3.7, PgBouncer |
+| Observability | Prometheus (multiprocess), Grafana |
+| CI/CD | GitHub Actions — ruff, pytest, Semgrep, Bandit, pip-audit, Gitleaks, Trivy, CycloneDX SBOM, GHCR |
+| Load testing | k6 |
+
+### Roadmap
+
+- [x] API skeleton, data model, hardened image
+- [x] Async worker + message queue, cache, connection pool, graceful shutdown
+- [x] RBAC accounts, multi-scanner ingestion, EPSS score
+- [x] HA (Traefik + replicas + retry), Prometheus/Grafana observability
+- [x] Slack/webhook notifications, scripted backup & restore
+- [x] Web triage console + Wazuh-style modules
+- [x] RBVM: risk score, KEV, SLA/MTTR, posture burndown, executive PDF
+- [x] CI/CD security pipeline (SAST/SCA/secrets gates + branch protection)
+- [x] Delivery: image scan (Trivy), SBOM (CycloneDX), publish to GHCR
+- [ ] Kubernetes / Helm chart
+- [ ] Dynamic analysis (DAST) in the nightly pipeline
+
+---
+
+## 🇫🇷 Français
+
+### Le problème
+
+Scanner est facile. Exploiter les résultats ne l'est pas. Chaque exécution de pipeline republie les mêmes milliers de lignes de JSON ; trois scanners remontent la même CVE sous trois formats différents. Sans consolidation, le bruit noie les vulnérabilités qui comptent vraiment — et personne ne corrige rien.
+
+VulnTrack transforme ce flux brut en **findings uniques, priorisés et suivis dans le temps**, et ajoute une couche **basée sur le risque** pour toujours savoir quoi corriger en premier.
+
+### Fonctionnalités clés
+
+- **Ingestion multi-scanner** — Trivy (SCA/images), Semgrep (SAST), Gitleaks (secrets), dédupliqués par une empreinte SHA-256 scopée par scanner : rescanner en continu ne crée jamais de doublons.
+- **Gestion basée sur le risque (RBVM)** — score de risque composite (sévérité × EPSS × KEV × criticité de l'asset, 0–100 avec bandes), criticité métier éditable par asset, politique **SLA** et **MTTR** calculés depuis l'audit trail, et une page **Posture & SLA** (distribution du risque, burndown de remédiation, suivi des retards).
+- **Console de triage** (`/ui`) — tableau de bord, workspace de findings avec filtres combinables, recherche à facettes, actions en masse et export CSV, cycle de vie des statuts avec justifications **historisées**, plus cinq modules façon Wazuh : Détection de vulnérabilités (CVE/EPSS), SAST, Secrets, cartographie **MITRE ATT&CK**, et Inventaire système.
+- **Enrichissement** — EPSS (FIRST.org) et KEV (CISA) : la priorisation reflète l'exploitation réelle, pas seulement le CVSS.
+- **Rapport exécutif PDF** — résumé de la posture de risque en un clic (ReportLab).
+- **Plateforme de niveau production** — haute disponibilité (Traefik + retry, réplicas sans état, PgBouncer), observabilité (Prometheus RED + métriques métier, Grafana provisionné), notifications Slack/webhook, sauvegarde & restauration scriptées.
+- **Sécurité par conception** — cookie de session HttpOnly, CSRF double-submit, RBAC côté serveur (admin/analyst/viewer), CSP stricte, rendu anti-XSS via `textContent`, conteneur non-root.
+
+### Démarrage rapide
+
+```bash
+git clone https://github.com/x0u7s1d3r/vulntrack.git
+cd vulntrack
+cp .env.example .env
+
+docker compose up -d
+
+docker compose exec api python -m scripts.create_admin --username amiir --password "un-mot-de-passe-solide"
+```
+
+Puis ouvre :
+
+- **Console** → http://localhost:8001/ui
+- **Docs API (Swagger)** → http://localhost:8001/docs
+- **Grafana** → http://localhost:3001
+
+Tirer l'image publiée directement :
+
+```bash
+docker pull ghcr.io/x0u7s1d3r/vulntrack:latest
+```
+
+### Stack technique
 
 | Domaine | Technologies |
 | --- | --- |
-| API | Python 3.12, FastAPI, SQLAlchemy, Pydantic |
-| Données | PostgreSQL 16, Redis |
-| Conteneurisation | Docker, Docker Compose |
-| CI/CD | GitLab CI |
-| Sécurité | Bandit, pip-audit, Trivy, gitleaks, OWASP ZAP |
-| Répartition de charge | Traefik |
-| Déploiement | Ansible, Kubernetes (k3s) |
-| Observabilité | Prometheus, Grafana |
+| API | Python 3.12, FastAPI, SQLAlchemy, Pydantic, Alembic |
+| Données | PostgreSQL 16, Redis, RQ (worker) |
+| Enrichissement | EPSS (FIRST.org), KEV (CISA) |
+| Frontend | Coquilles rendues serveur + JS vanilla (aucun CDN externe), CSP stricte |
+| Conteneurs | Docker, Docker Compose, image multi-stage durcie (non-root) |
+| Répartition / HA | Traefik v3.7, PgBouncer |
+| Observabilité | Prometheus (multiprocess), Grafana |
+| CI/CD | GitHub Actions — ruff, pytest, Semgrep, Bandit, pip-audit, Gitleaks, Trivy, SBOM CycloneDX, GHCR |
 | Tests de charge | k6 |
 
----
+### Feuille de route
 
-## Architecture
-
-    +-------------+        +--------------+        +--------------+
-    |   Client    | -----> |   Traefik    | -----> |  API FastAPI |
-    |  (CI, dev)  |        | load balancer|        |  (N replicas)|
-    +-------------+        +--------------+        +------+-------+
-                                                          |
-                                    +---------------------+---------------------+
-                                    |                                           |
-                             +------v------+                             +------v------+
-                             |    Redis    |                             | PostgreSQL  |
-                             | file + cache|                             |  PgBouncer  |
-                             +------+------+                             +-------------+
-                                    |
-                             +------v------+
-                             |   Worker    | ---> scanners (Trivy, ZAP, pip-audit)
-                             +-------------+
-
-    Supervision : Prometheus scrape l'API et le worker, Grafana affiche les metriques RED.
+- [x] Squelette de l'API, modèle de données, image durcie
+- [x] Worker asynchrone + file de messages, cache, pool de connexions, arrêt gracieux
+- [x] Comptes RBAC, ingestion multi-scanner, score EPSS
+- [x] HA (Traefik + réplicas + retry), observabilité Prometheus/Grafana
+- [x] Notifications Slack/webhook, sauvegarde & restauration scriptées
+- [x] Console web de triage + modules façon Wazuh
+- [x] RBVM : score de risque, KEV, SLA/MTTR, burndown de posture, PDF exécutif
+- [x] Pipeline CI/CD de sécurité (gates SAST/SCA/secrets + protection de branche)
+- [x] Livraison : scan de l'image (Trivy), SBOM (CycloneDX), publication sur GHCR
+- [ ] Chart Kubernetes / Helm
+- [ ] Analyse dynamique (DAST) dans le pipeline nocturne
 
 ---
 
-## Modèle de données
+## 📄 License / Licence
 
-| Table | Rôle | Champs clés |
-| --- | --- | --- |
-| `assets` | Élément surveillé (image, dépôt, URL) | `id`, `name`, `type`, `created_at` |
-| `scans` | Exécution d'un scanner sur un asset | `id`, `asset_id`, `scanner`, `status`, `started_at` |
-| `findings` | Vulnérabilité constatée | `id`, `asset_id`, `scanner`, `fingerprint`, `severity`, `cve`, `component`, `rule_id`, `file_path`, `line_number`, `epss_score`, `status`, `first_seen`, `last_seen`, `updated_at` |
-| `finding_notes` | Journal de triage : commentaires et changements de statut historisés | `id`, `finding_id`, `author`, `kind`, `body`, `old_status`, `new_status`, `created_at` |
+[MIT](LICENSE) — © 2026 Amiir Touré.
 
-Le champ `fingerprint` est un hash SHA-256 qui identifie une trouvaille de façon stable d'un scan à l'autre. Sa formule dépend du scanner :
-
-- **Trivy** : `asset + CVE + composant` (une vulnérabilité connue sur un package donné)
-- **Semgrep / Gitleaks** : `asset + scanner + règle + fichier + ligne` (une règle déclenchée à un endroit précis du code, il n'y a ni CVE ni composant)
-
-C'est cette empreinte qui permet de rescanner en continu sans créer de doublons : une trouvaille déjà connue voit simplement son `last_seen` mis à jour. La détection des findings corrigés (passage automatique à `fixed`) est elle aussi scopée par scanner : un scan Semgrep ne peut jamais marquer comme corrigée une vulnérabilité remontée par Trivy sur le même asset, et inversement.
-
-Pour Gitleaks, le secret détecté lui-même n'est jamais stocké : seuls la règle, le fichier et la ligne le sont. Un finding consultable par un rôle `viewer` ou `analyst` ne doit jamais exposer un credential en clair, même déjà compromis.
-
----
-
-## Prérequis
-
-- Python 3.12 ou supérieur
-- Docker et Docker Compose
-- Git
-
----
-
-## Démarrage rapide
-
-Cloner et préparer l'environnement Python :
-
-    git clone <url-du-depot> vulntrack
-    cd vulntrack
-    python3 -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
-
-Configurer les variables d'environnement :
-
-    cp .env.example .env
-
-Lancer la base de données :
-
-    docker run -d --name vulntrack-db \
-      -e POSTGRES_USER=vulntrack \
-      -e POSTGRES_PASSWORD=changeme \
-      -e POSTGRES_DB=vulntrack \
-      -p 5433:5432 \
-      postgres:16-alpine
-
-Démarrer l'API :
-
-    uvicorn app.main:app --reload --port 8001
-
-Documentation interactive : http://localhost:8001/docs
-
----
-
-## Ports utilisés
-
-| Service | Port hôte | Port conteneur |
-| --- | --- | --- |
-| Traefik (entrée principale, répartit vers les replicas api) | 8001 | 80 |
-| PostgreSQL | 5433 | 5432 |
-| Redis | 6380 | 6379 |
-| Prometheus | 9091 | 9090 |
-| Grafana | 3001 | 3000 |
-| Traefik (dashboard, sans authentification — usage home-lab uniquement) | 8090 | 8080 |
-
-Depuis l'étape 10 (haute disponibilité), l'API n'est plus publiée directement sur l'hôte : `docker-compose.yml` ne mappe plus `8001:8000` sur le service `api`. Tout le trafic passe par Traefik, seul point d'entrée du réseau, qui répartit vers les instances `api` disponibles.
-
----
-
-## Variables d'environnement
-
-| Variable | Description | Exemple |
-| --- | --- | --- |
-| `APP_PORT` | Port d'écoute de l'API | `8001` |
-| `DATABASE_URL` | Chaîne de connexion PostgreSQL | `postgresql://user:password@localhost:5433/vulntrack` |
-| `UVICORN_WORKERS` | Workers uvicorn par instance `api` (voir [Répartition de charge](#répartition-de-charge-et-réplicas)) | `2` |
-
-Le fichier `.env` n'est jamais versionné. Le fichier `.env.example` documente les variables attendues sans exposer de valeur réelle.
-
----
-
-## Utilisation
-
-Vérifier que l'API répond :
-
-    curl http://localhost:8001/health
-
-Se connecter et récupérer un jeton (voir [Authentification et rôles](#authentification-et-rôles) pour créer le premier compte) :
-
-    TOKEN=$(curl -s -X POST http://localhost:8001/auth/login \
-      -d "username=amiir&password=un-mot-de-passe-solide" | jq -r .access_token)
-
-Créer un asset (rôle `admin` ou `analyst`) :
-
-    curl -X POST http://localhost:8001/assets \
-      -H "Authorization: Bearer $TOKEN" \
-      -H "Content-Type: application/json" \
-      -d '{"name":"nginx:1.25-alpine","type":"image"}'
-
-Lister les assets :
-
-    curl http://localhost:8001/assets -H "Authorization: Bearer $TOKEN"
-
-Lister les findings d'un asset :
-
-    curl http://localhost:8001/assets/1/findings -H "Authorization: Bearer $TOKEN"
-
-Ingérer un rapport de scan (clé d'API, pas de jeton JWT — voir [Authentification et rôles](#authentification-et-rôles)). Le champ `scanner` accepte `trivy`, `semgrep` ou `gitleaks` :
-
-    curl -X POST http://localhost:8001/scans/ingest \
-      -H "X-API-Key: $API_KEY" \
-      -F "asset_name=vulntrack-repo" \
-      -F "asset_type=repository" \
-      -F "scanner=semgrep" \
-      -F "report=@semgrep-report.json;type=application/json"
-
----
-
-## Endpoints
-
-| Méthode | Route | Description | Authentification |
-| --- | --- | --- | --- |
-| `GET` | `/health` | État de santé du service | Aucune |
-| `GET` | `/ready` | Sonde de disponibilité (dépendances) | Aucune |
-| `POST` | `/auth/login` | Connexion, retourne un jeton JWT | Identifiants |
-| `POST` | `/users` | Créer un compte utilisateur | JWT, rôle admin |
-| `GET` | `/users` | Lister les comptes utilisateurs | JWT, rôle admin |
-| `POST` | `/assets` | Créer un asset | JWT, rôle admin ou analyst |
-| `GET` | `/assets` | Lister les assets | JWT, tout rôle |
-| `GET` | `/assets/{id}/findings` | Lister les findings d'un asset | JWT, tout rôle |
-| `POST` | `/scans/ingest` | Ingérer un rapport de scan | Clé d'API |
-| `GET` | `/scans/{id}` | Consulter un scan | JWT, tout rôle |
-
-## Authentification et rôles
-
-Deux mécanismes distincts, pour deux usages distincts :
-
-- **Clé d'API** (`X-API-Key`) : réservée à `/scans/ingest`, l'ingestion machine-à-machine depuis un pipeline CI/CD. Pas de notion d'utilisateur ni de rôle ici.
-- **Comptes utilisateurs (JWT)** : pour les humains qui consultent et gèrent les données via l'API. Trois rôles :
-
-| Rôle | Peut lire (assets, findings, scans) | Peut créer des assets | Peut gérer les utilisateurs |
-| --- | --- | --- | --- |
-| `viewer` | Oui | Non | Non |
-| `analyst` | Oui | Oui | Non |
-| `admin` | Oui | Oui | Oui |
-
-Il n'y a pas d'auto-inscription : un compte est toujours créé par un admin via `POST /users`. Le tout premier compte admin, avant qu'aucun n'existe, se crée directement en base :
-
-    python -m scripts.create_admin --username amiir --password "un-mot-de-passe-solide"
-
-Récupérer un jeton :
-
-    curl -X POST http://localhost:8001/auth/login \
-      -d "username=amiir&password=un-mot-de-passe-solide"
-
-Puis l'utiliser :
-
-    curl http://localhost:8001/assets \
-      -H "Authorization: Bearer <token>"
-
----
-
-## Tests
-
-Lancer la suite de tests :
-
-    pytest -v
-
-Avec le taux de couverture :
-
-    pytest --cov=app --cov-report=term-missing
-
----
-
-## Sécurité
-
-La sécurité est traitée à deux niveaux distincts.
-
-**Sécurité de l'application**
-
-- Aucun secret dans le code, configuration exclusivement par variables d'environnement
-- Validation stricte de toutes les entrées via Pydantic
-- Séparation des modèles de persistance et des schémas d'exposition
-- Clé d'API pour l'ingestion machine-à-machine, comptes utilisateurs JWT avec RBAC (admin / analyst / viewer) pour tout le reste
-- Mots de passe hachés avec bcrypt, jamais stockés ni exposés en clair
-- Pas d'auto-inscription : les comptes sont créés par un admin
-- Limitation de débit par client, y compris sur la connexion (anti bruteforce)
-- Conteneurs exécutés avec un utilisateur non privilégié
-
-**Sécurité de la chaîne de production**
-
-| Moment | Contrôle | Outil |
-| --- | --- | --- |
-| Avant chaque commit | Détection de secrets, analyse statique | gitleaks, bandit |
-| À chaque Pull Request | Dépendances, image, tests | pip-audit, Trivy, pytest |
-| Chaque nuit | Rescan complet, test dynamique | Trivy, OWASP ZAP |
-
-Politique de blocage : les vulnérabilités de sévérité critique et haute font échouer le pipeline. Les sévérités moyenne et basse sont enregistrées et suivies sans bloquer la livraison.
-
----
-
-## Haute disponibilité
-
-L'architecture est conçue pour rester disponible sous forte charge.
-
-| Mécanisme | Problème traité |
-| --- | --- |
-| API sans état | Permet de multiplier les instances à l'identique |
-| Répartition de charge Traefik | Distribue le trafic et écarte automatiquement les instances défaillantes (healthcheck actif sur `/health`) |
-| Ingestion asynchrone via Redis | Les pics de trafic remplissent la file au lieu de saturer l'API |
-| Pool de connexions PgBouncer | Évite l'épuisement des connexions PostgreSQL |
-| Cache Redis sur les lectures | Décharge la base sur les endpoints les plus sollicités |
-| Sondes de vivacité et de disponibilité | Permettent à Traefik de router uniquement vers les instances prêtes |
-| Arrêt gracieux | Aucune requête perdue pendant un déploiement |
-
-Les résultats des campagnes de tests de charge k6 sont documentés dans `docs/load-testing.md`.
-
-### Répartition de charge et réplicas
-
-Traefik répartit le trafic entre toutes les instances `api` en cours d'exécution. Pour en lancer plusieurs :
-
-    docker compose up -d --scale api=3
-
-Chaque instance tourne avec `UVICORN_WORKERS` workers uvicorn (`2` par défaut, réglable dans `.env`) : avec 3 replicas à 2 workers, la capacité totale (6 workers) dépasse déjà l'instance unique à 4 workers de l'étape 6-7. Ajuster `UVICORN_WORKERS` et le nombre de replicas selon le nombre de vCPU réellement disponibles sur la VM plutôt que de les augmenter aveuglément.
-
-Un replica qui échoue son healthcheck (`/health`) est retiré de la rotation par Traefik sans intervention manuelle — c'est ce qui transforme "plusieurs instances" en "haute disponibilité" : tuer un conteneur `api` à la main pendant que le trafic continue est le test le plus parlant.
-
-Entre l'instant où un replica meurt et sa détection par le healthcheck (jusqu'à 10 s), une requête peut encore lui être routée et tomber sur un refus de connexion. Un *retry middleware* rejoue alors cette requête sur un autre replica plutôt que de renvoyer une erreur au client. Traefik ne rejoue que tant qu'aucune réponse n'a été émise, donc sans risque de double exécution côté serveur. Résultat mesuré en tuant un replica sous charge continue : sans retry, une seule requête sur ~130 renvoyait un `504` au moment exact du kill ; avec le retry, la bascule est invisible côté client.
-
-**Limitation connue** : le tableau de bord Traefik (port 8090) tourne en mode `--api.insecure=true`, sans authentification. Acceptable en home-lab isolé, à ne jamais exposer tel quel sur un réseau non maîtrisé. Traefik a également besoin d'un accès en lecture au socket Docker (`/var/run/docker.sock`) pour découvrir les conteneurs `api` : c'est un accès équivalent à root sur l'hôte, un compromis assumé ici et documenté plutôt que caché — à durcir avec un proxy dédié (ex. `tecnativa/docker-socket-proxy`) avant tout déploiement au-delà du home-lab.
-
-**Piège rencontré en déploiement réel** : sur un moteur Docker récent (testé avec Docker Engine 29.x, API 1.55), Traefik v3.3 échoue silencieusement à découvrir les conteneurs avec `Error response from daemon: client version 1.24 is too old`. Traefik v3.3 fige en dur la version d'API de son client Docker (1.24), que les moteurs récents rejettent — et il **ignore la variable `DOCKER_API_VERSION`** (vérifié : la variable était bien présente dans le conteneur, sans effet). Le correctif est de monter Traefik en v3.7+ (ici `v3.7.11`), qui négocie correctement la version d'API. Symptôme caractéristique : `curl http://localhost:8001/...` répond `404 page not found` (la page 404 de Traefik lui-même, pas celle de l'API) ; confirmer avec `docker compose logs traefik`.
-
----
-
-## Observabilité
-
-L'observabilité repose sur les métriques RED (Rate, Errors, Duration), complétées par des métriques métier. Prometheus collecte, Grafana affiche un tableau de bord provisionné en code.
-
-**Où sont exposées les métriques**
-
-| Source | Métriques | Endpoint |
-| --- | --- | --- |
-| API (chaque replica) | RED : `vulntrack_http_requests_total`, `vulntrack_http_request_duration_seconds` | `/metrics` sur le port interne 8000 |
-| Worker | État métier : `vulntrack_ingest_queue_depth`, `vulntrack_findings{severity,status}` | serveur dédié, port 9100 |
-
-Les métriques métier sont des jauges calculées à la volée au moment du scrape (état courant de la file et des findings), pas des compteurs incrémentés dans le code.
-
-**Le piège du multi-process.** Chaque conteneur `api` fait tourner plusieurs workers uvicorn, c'est-à-dire plusieurs processus derrière un seul port. Un scrape Prometheus tomberait sur un worker au hasard et ne verrait que ses compteurs — des métriques fausses et sous-comptées. La parade est le mode multi-process de `prometheus_client` : chaque worker écrit ses métriques dans un répertoire partagé (`PROMETHEUS_MULTIPROC_DIR`), et l'endpoint `/metrics` les agrège à la lecture. Le répertoire est vidé au démarrage du conteneur pour ne pas agréger les fichiers d'une exécution précédente. Le worker, lui, est mono-process : pas de cette complexité, un simple serveur de métriques.
-
-**Découverte des replicas.** Prometheus ne connaît pas à l'avance le nombre de replicas `api`. Il les découvre via le DNS interne de Docker Compose (`dns_sd_configs` sur le nom de service `api`, qui résout vers toutes les IP des replicas) — sans avoir besoin du socket Docker cette fois. Quand on scale l'API, les nouveaux replicas sont scrapés au cycle suivant sans reconfiguration.
-
-**Accès**
-
-Grafana est disponible sur `http://localhost:3001` (identifiants par défaut `admin` / `admin`, à changer via `GRAFANA_USER` / `GRAFANA_PASSWORD`). La datasource Prometheus et le tableau de bord sont provisionnés automatiquement depuis `observability/grafana/` : rien à configurer à la main. Prometheus est sur `http://localhost:9091`.
-
-Le tableau de bord couvre : débit par classe de statut, taux d'erreur 5xx, latence p50/p95/p99, débit par route, profondeur de la file d'ingestion, et répartition des findings par sévérité et par statut.
-
-**Limitation connue** : l'endpoint `/metrics` n'est pas authentifié — il est scrapé sur le réseau interne et ne doit jamais être exposé publiquement via Traefik en production (à bloquer au niveau du reverse proxy ou à protéger). Les identifiants Grafana par défaut sont ceux d'un home-lab et doivent être changés avant toute exposition.
-
----
-
-## Notifications
-
-Quand un scan produit de **nouveaux** findings au moins aussi graves qu'un seuil configurable, le worker envoie une alerte. Deux canaux indépendants et optionnels :
-
-| Canal | Variable | Format |
-| --- | --- | --- |
-| Slack | `SLACK_WEBHOOK_URL` | message texte (webhook entrant Slack) |
-| Webhook générique | `NOTIFY_WEBHOOK_URL` | `POST` JSON du résumé brut, pour brancher n'importe quel outil |
-
-Le seuil se règle via `NOTIFY_MIN_SEVERITY` (défaut `high` : n'alerte que sur `critical` et `high`). Sans URL configurée, aucune notification n'est envoyée et aucun appel réseau n'est fait.
-
-L'envoi est **best-effort** : il part du worker, après que le scan est déjà enregistré en base, et un échec (réseau, URL invalide) est journalisé sans jamais faire échouer le scan. Une notification perdue est moins grave qu'un scan perdu. Les deux canaux sont indépendants : si Slack tombe, le webhook générique est quand même tenté.
-
-Seuls les **nouveaux** findings déclenchent une alerte, pas ceux déjà connus revus au scan suivant — sinon chaque rescan renverrait le même bruit.
-
-## Console web
-
-Une **console de gestion des vulnérabilités** est servie sous `/ui` — via Traefik : `http://localhost:8001/ui`. Ce n'est pas qu'un affichage : on y **travaille** (triage, notes, actions en masse, export), à la manière d'un Greenbone/OpenVAS. Elle réutilise les comptes de l'API (`scripts/create_admin.py` ou `POST /users`).
-
-**Tableau de bord** (`/ui`). Barre latérale de navigation, pleine largeur. Neuf panneaux : 6 indicateurs (assets, findings ouverts, critiques, élevés, **exploitables** = EPSS ≥ 0,5, corrigés), anneau des sévérités, cycle de vie (statuts), répartition par scanner, histogramme des découvertes dans le temps, top assets à risque (score pondéré), **panneau « À prioriser »** (critiques/élevés ouverts triés par exploitabilité EPSS), CVE les plus fréquentes, activité récente.
-
-**Workspace Findings** (`/ui/findings`). L'espace de travail : tous les findings, filtres combinables (sévérité, statut, scanner, asset, seuil EPSS, recherche plein-texte), tri de colonnes, pagination, facettes chiffrées. On sélectionne des lignes pour des **actions en masse**, ou on ouvre un finding dans un **panneau latéral** montrant tout le détail, l'**historique de triage** et les notes.
-
-**On peut agir** (rôles `analyst` / `admin` ; `viewer` reste en lecture seule) :
-
-- Changer le **statut** d'un finding (`open` → `in_progress` → `accepted` / `false_positive` / `fixed`) avec une justification — l'équivalent des *overrides* d'OpenVAS.
-- Ajouter des **notes/commentaires**.
-- Chaque changement de statut est **historisé** (auteur, transition, justification, horodatage) dans un fil chronologique unique par finding.
-- **Actions en masse** sur une sélection, et **export CSV** respectant les filtres courants.
-
-**Architecture.** Les pages sont des coquilles HTML qui récupèrent leurs données via des endpoints JSON (`/ui/api/*`) ; le rendu dynamique est fait en JavaScript maison. Aucune dépendance externe (pas de React, pas de CDN), ce qui permet de conserver la CSP stricte.
-
-Choix de sécurité :
-
-- **Cookie de session `HttpOnly`** contenant le JWT (le JavaScript ne peut pas lire le jeton), limité au chemin `/ui`, marqué `Secure` hors développement. Les endpoints JSON renvoient `401` sans session (le client redirige alors vers la connexion), et non du HTML.
-- **Protection CSRF** sur toutes les mutations : jeton double-submit (cookie lisible par le JS + en-tête `X-CSRF-Token` que seul le même origine peut poser), combiné à `SameSite=Lax`. Un site tiers ne peut ni lire le cookie ni forger l'en-tête.
-- **RBAC** appliqué côté serveur : les endpoints de mutation exigent le rôle `analyst` ou `admin` ; le front masque simplement les boutons pour un `viewer`, mais c'est le serveur qui tranche.
-- **Anti-XSS par construction** : les données (titres de findings, issus de rapports de scanners) sont insérées dans le DOM via `textContent`, jamais via `innerHTML`. Un titre malveillant (`<script>…`) ne peut donc pas s'exécuter.
-- **CSP stricte inchangée** : `default-src 'self'`. CSS et JS servis en fichiers statiques same-origin, graphiques en SVG construit par attributs — aucun style ni script inline, aucun hôte externe.
-
-## Sauvegarde et restauration
-
-Le seul état critique est la base PostgreSQL. Deux scripts opèrent directement sur le conteneur `db`, sans client PostgreSQL sur l'hôte :
-
-    ./scripts/backup.sh                                   # dump horodaté dans backups/
-    ./scripts/restore.sh backups/vulntrack-<date>.dump    # restauration (avec confirmation)
-
-La procédure complète — automatisation par cron, **test de bout en bout** (sauvegarder → simuler une perte → restaurer → vérifier), et ce qui n'est pas couvert — est documentée dans [`docs/backup-restore.md`](docs/backup-restore.md). Une sauvegarde jamais restaurée n'en est pas une : le test de restauration fait partie de la procédure.
-
----
-
-## Feuille de route
-
-- [x] Squelette de l'API et modèle de données
-- [x] Conteneurisation et durcissement de l'image
-- [x] Orchestration locale via Docker Compose
-- [x] Sécurité applicative : authentification par clé d'API, limitation de débit, en-têtes
-- [x] Worker asynchrone et file de messages
-- [x] Première campagne de tests de charge
-- [x] Cache, pool de connexions, arrêt gracieux
-- [x] Comptes utilisateurs et rôles (RBAC)
-- [x] Ingestion multi-scanner (Trivy, Semgrep, Gitleaks) et score EPSS
-- [x] Répartition de charge et réplicas
-- [x] Supervision Prometheus et Grafana
-- [x] Notifications (webhook/Slack) et sauvegarde documentée
-- [x] Frontend simple
-- [ ] Pipeline d'intégration continue et gates de sécurité
-- [ ] Documentation finale et section limitations connues
-- [ ] Manifests Kubernetes / Helm chart
-
----
-
-## Structure du dépôt
-
-    vulntrack/
-    ├── app/
-    │   ├── __init__.py
-    │   ├── main.py          points d'entree HTTP
-    │   ├── auth.py          JWT, hachage de mot de passe, RBAC
-    │   ├── config.py        variables d'environnement (pydantic-settings)
-    │   ├── database.py      connexion et session PostgreSQL
-    │   ├── models.py        tables SQLAlchemy
-    │   ├── schemas.py       validation Pydantic
-    │   ├── parsers.py       parseurs Trivy / Semgrep / Gitleaks
-    │   ├── epss.py          enrichissement EPSS (FIRST.org)
-    │   ├── jobs.py          traitement asynchrone d'un scan (worker)
-    │   ├── queue.py         file Redis / RQ
-    │   ├── storage.py       persistance des rapports bruts
-    │   ├── cache.py         cache Redis en lecture
-    │   ├── middleware.py    en-tetes de securite
-    │   ├── security.py      cle d'API machine-a-machine
-    │   ├── metrics.py       metriques RED (Prometheus, multi-process)
-    │   ├── metrics_state.py jauges d'etat metier (exposees par le worker)
-    │   ├── notifications.py alertes Slack / webhook sur nouveaux findings
-    │   ├── web.py           console /ui : pages + API JSON + triage (CSRF, RBAC)
-    │   ├── web_stats.py     agregations et recherche filtree des findings
-    │   ├── templates/       coquilles Jinja2 (dashboard, findings, asset, login)
-    │   └── static/          app.js (console dynamique) + style.css
-    ├── observability/
-    │   ├── prometheus.yml   configuration de collecte
-    │   └── grafana/
-    │       ├── provisioning/  datasource + provider de dashboards
-    │       └── dashboards/    tableau de bord VulnTrack (JSON versionne)
-    ├── scripts/
-    │   ├── create_admin.py  creation du tout premier compte admin
-    │   ├── backup.sh        sauvegarde de la base (pg_dump)
-    │   └── restore.sh       restauration depuis une sauvegarde
-    ├── tests/
-    │   ├── __init__.py
-    │   ├── conftest.py
-    │   ├── test_api.py
-    │   ├── test_auth.py
-    │   ├── test_parsers.py
-    │   ├── test_epss.py
-    │   ├── test_jobs.py
-    │   ├── test_security.py
-    │   ├── test_metrics.py
-    │   ├── test_notifications.py
-    │   ├── test_web.py
-    │   ├── test_web_stats.py
-    │   └── test_web_triage.py
-    ├── docs/
-    │   └── backup-restore.md  procedure de sauvegarde/restauration
-    ├── worker.py            worker RQ + serveur de metriques d'etat
-    ├── .env.example
-    ├── .gitignore
-    ├── requirements.txt
-    └── README.md
-
----
-
-## Licence
-
-MIT
+VulnTrack is a portfolio project built step by step as a hands-on DevSecOps lab; it is also the target application protected by the companion **ARGUS** SOC/DevSecOps project. / VulnTrack est un projet de portfolio construit pas à pas comme un lab DevSecOps ; c'est aussi l'application cible protégée par le projet compagnon **ARGUS**.
