@@ -71,6 +71,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
     image: vulntrack-api:0.5.0
     # Pas de container_name : un nom fixe empeche `docker compose up --scale
     # api=N` de creer plusieurs replicas (deux conteneurs ne peuvent pas
@@ -134,7 +135,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: vulntrack-api:0.5.0
+      target: worker
+    image: vulntrack-worker:0.5.0
     command: ["python", "worker.py"]
     stop_grace_period: 30s
     restart: unless-stopped

@@ -90,7 +90,19 @@ if settings.cors_origin_list:
 # Frontend web (etape 13) : CSS statique en same-origin (CSP inchangee) et
 # routeur de consultation en lecture seule sous /ui.
 _WEB_STATIC = Path(__file__).resolve().parent / "static"
-app.mount("/ui/static", StaticFiles(directory=str(_WEB_STATIC)), name="web-static")
+class _NoCacheStaticFiles(StaticFiles):
+    """En dev, empeche la mise en cache navigateur des statiques (app.js/style.css)."""
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if get_settings().environment == "development":
+            response.headers["Cache-Control"] = "no-store"
+            for _h in ("etag", "last-modified"):
+                if _h in response.headers:
+                    del response.headers[_h]
+        return response
+
+
+app.mount("/ui/static", _NoCacheStaticFiles(directory=str(_WEB_STATIC)), name="web-static")
 app.include_router(web_router)
 
 

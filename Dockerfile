@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
 # ---------- Stage 2 : image finale ----------
-FROM python:3.12-slim
+FROM python:3.12-slim AS runtime
 
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libpq5 curl \
@@ -51,3 +51,27 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # agreges par erreur. Fait avant le lancement du master uvicorn, une seule
 # fois pour tous ses workers.
 CMD ["sh", "-c", "rm -f ${PROMETHEUS_MULTIPROC_DIR:-/data/prometheus}/* 2>/dev/null; exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers ${UVICORN_WORKERS:-4} --timeout-graceful-shutdown 20"]
+
+# ---------- Stage 3 : image du worker (avec les scanners) ----------
+# Les scanners ne vivent QUE dans l'image du worker (composant NON expose),
+# jamais dans l'API. Trivy telecharge lui-meme les images via son propre
+# client de registre -> AUCUN acces au socket Docker necessaire.
+FROM runtime AS worker
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+# Trivy (binaire epingle)
+RUN TRIVY_VERSION=0.74.0 \
+    && curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+       | tar -xz -C /usr/local/bin trivy
+# Gitleaks (binaire epingle)
+RUN GITLEAKS_VERSION=8.18.4 \
+    && curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+       | tar -xz -C /usr/local/bin gitleaks
+# Semgrep (paquet Python ; non epingle en v1, a figer une fois la version connue)
+RUN pip install --no-cache-dir semgrep
+# Caches accessibles en non-root (Trivy: base de vulns ; HOME: cache Semgrep/git)
+RUN mkdir -p /data/trivy-cache && chown -R vulntrack:vulntrack /data/trivy-cache
+ENV TRIVY_CACHE_DIR=/data/trivy-cache
+ENV HOME=/tmp
+USER vulntrack

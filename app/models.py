@@ -136,3 +136,30 @@ class FindingNote(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     finding = relationship("Finding", back_populates="notes")
+
+
+class ScanTarget(Base):
+    """Cible que VulnTrack scanne LUI-MEME : il declenche le scanner et
+    reinjecte le rapport dans le pipeline d'ingestion existant. Une cible
+    correspond a un asset (par son nom) : ses scans alimentent les findings
+    de cet asset, exactement comme une ingestion poussee via /scans/ingest."""
+
+    __tablename__ = "scan_targets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # = nom de l'asset produit (get-or-create par le runner, comme l'ingestion).
+    name = Column(String(255), nullable=False, unique=True)
+    # "image" (reference d'image OCI) | "repository" (URL git). Valide par schemas.
+    target_type = Column(String(20), nullable=False)
+    # Ce qu'on scanne : "nginx:1.25-alpine" ou "https://github.com/x/y.git".
+    reference = Column(String(500), nullable=False)
+    # Scanners a executer, separes par des virgules. image -> "trivy" ;
+    # repository -> "trivy,semgrep,gitleaks".
+    scanners = Column(String(200), nullable=False)
+    # Cadence de scan, expression cron (croniter). NULL = a la demande uniquement.
+    schedule = Column(String(100), nullable=True)
+    enabled = Column(Boolean, nullable=False, server_default="1", default=True)
+    # Suivi de la derniere execution (affichage + decisions du planificateur).
+    last_scan_at = Column(DateTime(timezone=True), nullable=True)
+    last_status = Column(String(20), nullable=True)  # "success" | "error" | "running"
+    created_at = Column(DateTime(timezone=True), default=utcnow)

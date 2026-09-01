@@ -1268,4 +1268,84 @@
   else if (page === "attack") renderAttack();
   else if (page === "inventory") renderInventory(canWrite);
   else if (page === "posture") renderPosture();
+  else if (page === "scan-targets") renderScanTargets(canWrite);
+
+  async function renderScanTargets(canWrite) {
+    const SCANNERS_BY_TYPE = { image: ["trivy"], repository: ["trivy", "semgrep", "gitleaks"] };
+
+    if (canWrite) {
+      const typeSel = byId("st-type");
+      const scHost = byId("st-scanners");
+      const refreshScanners = () => {
+        clear(scHost);
+        (SCANNERS_BY_TYPE[typeSel.value] || []).forEach((name) => {
+          const cb = el("input", { type: "checkbox" });
+          cb.checked = true; cb.value = name; cb.className = "st-sc";
+          scHost.appendChild(el("label", { class: "st-sc-lbl" }, [cb, document.createTextNode(" " + name)]));
+        });
+      };
+      typeSel.addEventListener("change", refreshScanners);
+      refreshScanners();
+
+      byId("st-add").addEventListener("click", async () => {
+        const scanners = Array.from(document.querySelectorAll("#st-scanners .st-sc")).filter((c) => c.checked).map((c) => c.value);
+        const payload = {
+          name: byId("st-name").value.trim(),
+          target_type: typeSel.value,
+          reference: byId("st-ref").value.trim(),
+          scanners: scanners,
+          schedule: byId("st-schedule").value.trim() || null,
+        };
+        if (!payload.name || !payload.reference || !scanners.length) {
+          return toast("Nom, référence et au moins un scanner requis.", "error");
+        }
+        try {
+          await apiSend("POST", "/ui/api/scan-targets", payload);
+          toast("Cible ajoutée.", "ok");
+          byId("st-name").value = ""; byId("st-ref").value = ""; byId("st-schedule").value = "";
+          load();
+        } catch (e) { toast(e.message, "error"); }
+      });
+    }
+
+    async function load() {
+      let d;
+      try { d = await api("/ui/api/scan-targets"); }
+      catch (e) { return toast("Chargement impossible : " + e.message, "error"); }
+      const host = byId("st-table"); clear(host);
+      if (!d.targets.length) { host.appendChild(empty("Aucune cible. Ajoutez-en une ci-dessus.")); return; }
+      const tb = el("tbody");
+      d.targets.forEach((t) => {
+        const when = t.last_status ? (t.last_scan_at ? t.last_status + " \u00b7 " + t.last_scan_at.slice(0, 16).replace("T", " ") : t.last_status) : "\u2014";
+        const actions = el("td", { class: "st-actions" });
+        if (canWrite) {
+          actions.appendChild(el("button", { class: "btn btn-sm btn-primary", type: "button", text: "Scanner", on: { click: async (e) => {
+            const b = e.currentTarget; b.disabled = true;
+            try { await apiSend("POST", "/ui/api/scan-targets/" + t.id + "/scan"); toast("Scan lance pour " + t.name + ".", "ok"); }
+            catch (err) { toast(err.message, "error"); }
+            finally { b.disabled = false; }
+          } } }));
+          actions.appendChild(el("button", { class: "btn btn-sm btn-ghost", type: "button", text: "Suppr.", on: { click: async () => {
+            try { await apiSend("DELETE", "/ui/api/scan-targets/" + t.id); toast("Cible supprimee.", "ok"); load(); }
+            catch (err) { toast(err.message, "error"); }
+          } } }));
+        }
+        tb.appendChild(el("tr", {}, [
+          el("td", { class: "strong", text: t.name }),
+          el("td", {}, [pill(t.target_type === "image" ? "Image" : "Depot", "")]),
+          el("td", { class: "ref", text: t.reference }),
+          el("td", { text: t.scanners.join(", ") }),
+          el("td", { class: "muted", text: t.schedule || "a la demande" }),
+          el("td", { class: "muted nowrap", text: when }),
+          actions,
+        ]));
+      });
+      const cols = ["Nom", "Type", "Reference", "Scanners", "Cadence", "Dernier scan", ""];
+      host.appendChild(el("table", { class: "grid compact" }, [
+        el("thead", {}, [el("tr", {}, cols.map((c) => th(c)))]), tb,
+      ]));
+    }
+    load();
+  }
+
 })();
