@@ -166,6 +166,14 @@ services:
       NOTIFY_MIN_SEVERITY: ${NOTIFY_MIN_SEVERITY:-high}
     volumes:
       - vulntrack-reports:/data/reports
+      - vulntrack-trivy-cache:/data/trivy-cache
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+        reservations:
+          memory: 512m
     depends_on:
       db:
         condition: service_healthy
@@ -267,6 +275,7 @@ volumes:
   vulntrack-data:
   vulntrack-redis-data:
   vulntrack-reports:
+  vulntrack-trivy-cache:
   vulntrack-prometheus-data:
   vulntrack-grafana-data:
 
