@@ -68,8 +68,8 @@ RUN TRIVY_VERSION=0.74.0 \
 RUN GITLEAKS_VERSION=8.18.4 \
     && curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
        | tar -xz -C /usr/local/bin gitleaks
-# Semgrep (paquet Python ; non epingle en v1, a figer une fois la version connue)
-RUN pip install --no-cache-dir semgrep
+# Semgrep (paquet Python, version epinglee pour des builds reproductibles)
+RUN pip install --no-cache-dir semgrep==1.176.0
 # Caches accessibles en non-root (Trivy: base de vulns ; HOME: cache Semgrep/git)
 RUN mkdir -p /data/trivy-cache && chown -R vulntrack:vulntrack /data/trivy-cache
 ENV TRIVY_CACHE_DIR=/data/trivy-cache
