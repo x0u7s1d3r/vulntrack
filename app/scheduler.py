@@ -30,6 +30,10 @@ def due_targets(db, now):
         if t.last_status in BUSY:
             continue
         base = t.last_scan_at or t.created_at or (now - timedelta(days=1))
+        if base.tzinfo is None:
+            # Certains backends (SQLite en test) ne conservent pas le fuseau :
+            # on suppose UTC pour comparer a `now` (timezone-aware) sans planter.
+            base = base.replace(tzinfo=timezone.utc)
         try:
             nxt = croniter(t.schedule, base).get_next(datetime)
         except Exception:
