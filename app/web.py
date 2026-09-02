@@ -167,6 +167,7 @@ def _render_login(request: Request, error: str | None = None,
         key=LOGIN_CSRF_COOKIE, value=token, httponly=True,
         secure=_cookie_secure(), samesite="lax", max_age=1800, path="/ui",
     )
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
