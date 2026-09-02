@@ -239,6 +239,30 @@ services:
       - vulntrack-net
 
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: vulntrack-api:0.5.0
+    command: ["python", "-m", "app.scheduler"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: ${ENVIRONMENT}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES}
+      API_KEYS: ${API_KEYS}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - vulntrack-net
+
 volumes:
   vulntrack-data:
   vulntrack-redis-data:
