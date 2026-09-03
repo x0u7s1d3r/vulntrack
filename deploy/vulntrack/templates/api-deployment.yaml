@@ -17,25 +17,35 @@ spec:
         {{- include "vulntrack.labels" . | nindent 8 }}
         app.kubernetes.io/component: api
     spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       initContainers:
-        # Migre le schema AVANT de lancer l'api. Doit reussir sinon le pod
-        # ne demarre pas -> jamais d'api sur une base non migree.
         - name: migrate
           image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["alembic", "upgrade", "head"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           envFrom:
             - configMapRef:
                 name: {{ include "vulntrack.fullname" . }}-config
             - secretRef:
                 name: {{ include "vulntrack.fullname" . }}-app
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: api
           image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: 8000
+          env:
+            - name: HOME          # HOME ecrivable (rootfs en lecture seule)
+              value: /tmp
           envFrom:
             - configMapRef:
                 name: {{ include "vulntrack.fullname" . }}-config
@@ -58,9 +68,13 @@ spec:
               mountPath: /data/reports
             - name: prometheus
               mountPath: /data/prometheus
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: reports
           persistentVolumeClaim:
             claimName: {{ include "vulntrack.fullname" . }}-reports
         - name: prometheus
-          emptyDir: {}          # multiproc metrics : ephemere, vide au demarrage
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

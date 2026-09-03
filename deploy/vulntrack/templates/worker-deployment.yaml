@@ -17,7 +17,8 @@ spec:
         {{- include "vulntrack.labels" . | nindent 8 }}
         app.kubernetes.io/component: worker
     spec:
-      # Force le worker sur le MEME noeud que l'api -> partage du PVC reports (RWO).
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -31,14 +32,14 @@ spec:
           image: "{{ .Values.image.worker.repository }}:{{ .Values.image.worker.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["python", "worker.py"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           envFrom:
             - configMapRef:
                 name: {{ include "vulntrack.fullname" . }}-config
             - secretRef:
                 name: {{ include "vulntrack.fullname" . }}-app
           env:
-            # Worker mono-process : on desactive le mode multi-process prometheus
-            # herite de la ConfigMap (qui vise l'api).
             - name: PROMETHEUS_MULTIPROC_DIR
               value: ""
             - name: WORKER_METRICS_PORT
@@ -55,6 +56,8 @@ spec:
               mountPath: /data/reports
             - name: trivy-cache
               mountPath: /data/trivy-cache
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: reports
           persistentVolumeClaim:
@@ -62,3 +65,5 @@ spec:
         - name: trivy-cache
           persistentVolumeClaim:
             claimName: {{ include "vulntrack.fullname" . }}-trivy-cache
+        - name: tmp
+          emptyDir: {}

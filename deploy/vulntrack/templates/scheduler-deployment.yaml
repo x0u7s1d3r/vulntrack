@@ -17,16 +17,28 @@ spec:
         {{- include "vulntrack.labels" . | nindent 8 }}
         app.kubernetes.io/component: scheduler
     spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: scheduler
           image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["python", "-m", "app.scheduler"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: ""
+            - name: HOME
+              value: /tmp
           envFrom:
             - configMapRef:
                 name: {{ include "vulntrack.fullname" . }}-config
             - secretRef:
                 name: {{ include "vulntrack.fullname" . }}-app
-          env:
-            - name: PROMETHEUS_MULTIPROC_DIR
-              value: ""
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
