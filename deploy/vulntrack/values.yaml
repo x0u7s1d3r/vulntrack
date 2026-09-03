@@ -57,3 +57,6 @@ containerSecurityContext:
   readOnlyRootFilesystem: true
   capabilities:
     drop: ["ALL"]
+
+networkPolicy:
+  enabled: true
