@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vulntrack.fullname" . }}-config
+  labels:
+    {{- include "vulntrack.labels" . | nindent 4 }}
+data:
+  ENVIRONMENT: {{ .Values.app.environment | quote }}
+  REDIS_URL: "redis://{{ include "vulntrack.fullname" . }}-redis:6379/0"
+  REPORT_STORAGE_PATH: "/data/reports"
+  PROMETHEUS_MULTIPROC_DIR: "/data/prometheus"
+  JWT_ALGORITHM: {{ .Values.app.jwtAlgorithm | quote }}
+  JWT_EXPIRE_MINUTES: {{ .Values.app.jwtExpireMinutes | quote }}
+  UVICORN_WORKERS: {{ .Values.app.uvicornWorkers | quote }}
+  CORS_ORIGINS: {{ .Values.app.corsOrigins | quote }}
+  RATE_LIMIT_DEFAULT: {{ .Values.app.rateLimitDefault | quote }}
+  RATE_LIMIT_WRITE: {{ .Values.app.rateLimitWrite | quote }}
+  RATE_LIMIT_AUTH: {{ .Values.app.rateLimitAuth | quote }}

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vulntrack.fullname" . }}-trivy-cache
+  labels:
+    {{- include "vulntrack.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.worker.trivyCacheStorage | quote }}

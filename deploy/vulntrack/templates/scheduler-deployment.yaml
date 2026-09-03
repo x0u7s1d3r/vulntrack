@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vulntrack.fullname" . }}-scheduler
+  labels:
+    {{- include "vulntrack.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "vulntrack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scheduler
+  template:
+    metadata:
+      labels:
+        {{- include "vulntrack.labels" . | nindent 8 }}
+        app.kubernetes.io/component: scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "app.scheduler"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "vulntrack.fullname" . }}-config
+            - secretRef:
+                name: {{ include "vulntrack.fullname" . }}-app
+          env:
+            - name: PROMETHEUS_MULTIPROC_DIR
+              value: ""

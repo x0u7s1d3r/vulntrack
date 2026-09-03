@@ -1,0 +1,45 @@
+# Valeurs par defaut du chart VulnTrack.
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  pullPolicy: IfNotPresent      # utilise l'image chargee dans kind, sans pull
+  api:
+    repository: vulntrack-api
+    tag: "0.5.0"
+  worker:
+    repository: vulntrack-worker
+    tag: "0.5.0"
+
+app:
+  replicas: 1
+  environment: development       # HTTP en lab -> cookies non-Secure
+  jwtSecretKey: "dev-secret-key-please-change-in-prod-32chars"
+  jwtAlgorithm: HS256
+  jwtExpireMinutes: "60"
+  apiKeys: "k8s-demo-key"
+  uvicornWorkers: "2"
+  corsOrigins: ""
+  rateLimitDefault: "100/minute"
+  rateLimitWrite: "30/minute"
+  rateLimitAuth: "5/minute"
+  reportsStorage: 1Gi
+
+postgres:
+  image: postgres:16-alpine
+  database: vulntrack
+  user: vulntrack
+  password: vulntrack-dev-password   # DEV uniquement ; vrai secret en prod
+  storage: 1Gi
+
+redis:
+  image: redis:7-alpine
+
+worker:
+  metricsPort: "9100"
+  notifyMinSeverity: high
+  trivyCacheStorage: 2Gi
+
+ingress:
+  enabled: true
+  className: nginx
