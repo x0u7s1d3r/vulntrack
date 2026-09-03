@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vulntrack
+description: Plateforme de gestion de vulnerabilites VulnTrack (auto-scan, RBVM)
+type: application
+version: 0.1.0          # version du CHART (incrementee a chaque changement de template)
+appVersion: "0.5.0"     # version de l'APPLICATION deployee (image)

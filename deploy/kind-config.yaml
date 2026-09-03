@@ -1,0 +1,22 @@
+# Cluster kind pour le lab VulnTrack : 1 plan de controle + 1 worker.
+# Le plan de controle est etiquete "ingress-ready" et mappe 80/443 vers
+# l'hote (8081/8444) pour que l'Ingress soit joignable depuis localhost.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: vulntrack
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 18080
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 18443
+        protocol: TCP
+  - role: worker
