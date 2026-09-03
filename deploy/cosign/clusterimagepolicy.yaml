@@ -1,0 +1,17 @@
+# Politique de production : les images VulnTrack doivent etre signees par
+# NOTRE pipeline GitHub Actions (keyless, identite OIDC pinnee).
+# Demo pedagogique : on avait utilise issuerRegExp/subjectRegExp ".*" pour
+# accepter n'importe quelle signature ; ici on verrouille sur notre identite.
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: vulntrack-images-signees
+spec:
+  images:
+    - glob: "ghcr.io/x0u7s1d3r/vulntrack**"
+  authorities:
+    - keyless:
+        url: https://fulcio.sigstore.dev
+        identities:
+          - issuer: https://token.actions.githubusercontent.com
+            subjectRegExp: "^https://github.com/x0u7s1d3r/vulntrack/.github/workflows/.*@refs/heads/main$"
