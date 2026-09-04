@@ -113,6 +113,10 @@ jobs:
   livraison:
     name: Livraison — build & scan de l'image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write        # requis pour la signature keyless cosign (OIDC)
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
@@ -153,3 +157,13 @@ jobs:
           docker tag vulntrack:ci $IMAGE:latest
           docker push $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
+      - name: Installer cosign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: sigstore/cosign-installer@v3
+      - name: Signer l'image (keyless, OIDC GitHub Actions)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          IMAGE=ghcr.io/${{ github.repository }}
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")
+          echo "Signature de $DIGEST"
+          cosign sign --yes "$DIGEST"
