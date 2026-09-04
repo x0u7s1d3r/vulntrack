@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     notify_timeout_seconds: int = 5
     # Secret partage pour valider la signature HMAC des webhooks GitHub.
     github_webhook_secret: str = ""
+    # Token d'acces aux depots prives (PAT GitHub). Reste dans la config,
+    # JAMAIS en base ni dans l'UI. Injecte a la volee au clone.
+    git_token: str = ""
 
     @property
     def api_key_list(self) -> list[str]:
