@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     notify_webhook_url: str = ""
     notify_min_severity: str = "high"
     notify_timeout_seconds: int = 5
+    # Secret partage pour valider la signature HMAC des webhooks GitHub.
+    github_webhook_secret: str = ""
 
     @property
     def api_key_list(self) -> list[str]:
