@@ -6,10 +6,10 @@ image:
   pullPolicy: IfNotPresent      # utilise l'image chargee dans kind, sans pull
   api:
     repository: vulntrack-api
-    tag: "0.6.1"
+    tag: "0.7.1"
   worker:
     repository: vulntrack-worker
-    tag: "0.6.0"
+    tag: "0.7.1"
 
 app:
   replicas: 1
@@ -24,6 +24,8 @@ app:
   rateLimitWrite: "30/minute"
   rateLimitAuth: "5/minute"
   reportsStorage: 1Gi
+  # DAST : active le scan dynamique (cibles autorisees uniquement).
+  dast_enabled: true
 
 postgres:
   image: postgres:16-alpine

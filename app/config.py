@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     ollama_url: str = ""
     ollama_model: str = "llama3.2:3b"
     ollama_timeout: int = 120
+    # DAST (scan dynamique). Faux par defaut : garde-fou legal, on ne scanne
+    # que des cibles explicitement autorisees. A activer consciemment.
+    dast_enabled: bool = False
 
     @property
     def api_key_list(self) -> list[str]:

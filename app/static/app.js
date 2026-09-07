@@ -1332,7 +1332,7 @@
   else if (page === "scan-targets") renderScanTargets(canWrite);
 
   async function renderScanTargets(canWrite) {
-    const SCANNERS_BY_TYPE = { image: ["trivy"], repository: ["trivy", "semgrep", "gitleaks"] };
+    const SCANNERS_BY_TYPE = { image: ["trivy"], repository: ["trivy", "semgrep", "gitleaks"], url: ["nuclei"] };
 
     if (canWrite) {
       const typeSel = byId("st-type");
@@ -1393,7 +1393,7 @@
         }
         tb.appendChild(el("tr", {}, [
           el("td", { class: "strong", text: t.name }),
-          el("td", {}, [pill(t.target_type === "image" ? "Image" : "Depot", "")]),
+          el("td", {}, [pill(({ image: "Image", repository: "Depot", url: "URL" })[t.target_type] || t.target_type, "")]),
           el("td", { class: "ref", text: t.reference }),
           el("td", { text: t.scanners.join(", ") }),
           el("td", { class: "muted", text: t.schedule || "a la demande" }),

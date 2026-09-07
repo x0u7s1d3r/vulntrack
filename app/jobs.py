@@ -38,7 +38,7 @@ def process_scan(scan_id: int) -> dict:
 
             created = 0
             updated = 0
-            seen_fingerprints = []
+            seen_fingerprints = set()
             # Findings avec CVE, cree(e)s ou mis a jour dans ce scan : cible
             # de l'enrichissement EPSS une fois la boucle terminee.
             findings_with_cve = []
@@ -56,7 +56,13 @@ def process_scan(scan_id: int) -> dict:
                     file_path=parsed["file_path"],
                     line_number=parsed["line_number"],
                 )
-                seen_fingerprints.append(fingerprint)
+                if fingerprint in seen_fingerprints:
+                    # Meme empreinte deja traitee dans CE scan : un scanner peut
+                    # emettre deux fois le meme finding (frequent en DAST/Nuclei).
+                    # Sans ce garde-fou, deux Finding identiques -> violation
+                    # d'unicite au db.flush() et tout le scan echoue.
+                    continue
+                seen_fingerprints.add(fingerprint)
 
                 existing = (
                     db.query(Finding).filter_by(fingerprint=fingerprint).first()
