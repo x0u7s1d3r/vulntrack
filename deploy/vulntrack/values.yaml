@@ -6,10 +6,10 @@ image:
   pullPolicy: IfNotPresent      # utilise l'image chargee dans kind, sans pull
   api:
     repository: vulntrack-api
-    tag: "0.7.0"
+    tag: "0.7.1"
   worker:
     repository: vulntrack-worker
-    tag: "0.7.0"
+    tag: "0.7.1"
 
 app:
   replicas: 1
