@@ -5,6 +5,7 @@ Ce module NE reimplemente AUCUNE detection : il pilote trivy/semgrep/gitleaks
 en sous-processus, puis reutilise exactement le meme chemin que l'ingestion
 poussee via /scans/ingest -> save_report -> Scan -> process_scan.
 """
+import json
 import logging
 import subprocess
 import tempfile
@@ -26,6 +27,7 @@ SCANNER_TIMEOUT = 600
 SCANNERS_BY_TYPE = {
     "image": {"trivy"},
     "repository": {"trivy", "semgrep", "gitleaks"},
+    "url": {"nuclei"},
 }
 
 # Codes de sortie "normaux" (rapport quand meme produit) par scanner.
@@ -34,6 +36,7 @@ OK_EXIT_CODES = {
     "trivy": {0},
     "semgrep": {0},
     "gitleaks": {0, 1},
+    "nuclei": {0},
 }
 
 
@@ -50,6 +53,11 @@ def build_command(scanner: str, target_type: str, source: str, out_file: str) ->
     if scanner == "gitleaks":
         return ["gitleaks", "detect", "--source", source, "--no-git", "--no-banner",
                 "--report-format", "json", "--report-path", out_file]
+    if scanner == "nuclei" and target_type == "url":
+        # DAST : scanne une URL avec les templates bakes dans l'image worker.
+        # -duc : pas de check de MAJ (aucun appel reseau parasite).
+        return ["nuclei", "-u", source, "-jsonl", "-o", out_file, "-silent",
+                "-nc", "-duc", "-t", "/opt/nuclei-templates"]
     raise ValueError(f"combinaison non supportee: {scanner}/{target_type}")
 
 
@@ -67,7 +75,28 @@ def run_scanner(scanner: str, target_type: str, source: str) -> bytes:
                 f"{scanner} a echoue (code {proc.returncode}): "
                 f"{proc.stderr.decode(errors='replace')[:500]}"
             )
+        if scanner == "nuclei":
+            # Nuclei sort du JSONL ; on le normalise en tableau JSON pour rester
+            # compatible avec process_scan (json.loads unique).
+            return _nuclei_jsonl_to_array(Path(out_file))
         return Path(out_file).read_bytes()
+
+
+def _nuclei_jsonl_to_array(out_file: Path) -> bytes:
+    """Nuclei ecrit une ligne JSON par finding (JSONL), et rien si 0 finding.
+    On agrege en un tableau JSON (b"[]" si vide) pour uniformiser l'ingestion."""
+    if not out_file.exists():
+        return b"[]"
+    items = []
+    for line in out_file.read_text(errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            items.append(json.loads(line))
+        except ValueError:
+            continue
+    return json.dumps(items).encode()
 
 
 def _ingest(db, asset_name: str, asset_type: str, scanner: str, content: bytes) -> int:
@@ -134,6 +163,13 @@ def scan_target(target_id: int) -> dict:
         name, ttype, ref = target.name, target.target_type, target.reference
     finally:
         db.close()
+
+    if ttype == "url" and not get_settings().dast_enabled:
+        # Garde-fou legal : le DAST attaque une cible vivante. Desactive par
+        # defaut ; l'operateur doit l'activer en confirmant qu'il est autorise.
+        _finish_target(target_id, "error")
+        logger.warning("DAST desactive (dast_enabled=false) : URL %s ignoree", name)
+        return {"status": "error", "error": "DAST desactive (dast_enabled=false)"}
 
     results: dict = {}
     errors: list = []

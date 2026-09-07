@@ -76,6 +76,7 @@ class ScannerType(str, Enum):
     TRIVY = "trivy"
     SEMGREP = "semgrep"
     GITLEAKS = "gitleaks"
+    NUCLEI = "nuclei"
 
 
 class ScanOut(BaseModel):
@@ -179,12 +180,14 @@ from pydantic import model_validator  # noqa: E402
 _ALLOWED_SCANNERS = {
     "image": {"trivy"},
     "repository": {"trivy", "semgrep", "gitleaks"},
+    "url": {"nuclei"},
 }
 
 
 class ScanTargetType(str, Enum):
     IMAGE = "image"
     REPOSITORY = "repository"
+    URL = "url"
 
 
 class ScanTargetCreate(BaseModel):

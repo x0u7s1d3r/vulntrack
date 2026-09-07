@@ -97,10 +97,41 @@ def parse_gitleaks(report: list) -> Iterator[ParsedFinding]:
         )
 
 
+SEVERITY_MAP_NUCLEI = {
+    "critical": "critical", "high": "high", "medium": "medium",
+    "low": "low", "info": "info", "unknown": "info",
+}
+
+
+def parse_nuclei(report: list) -> Iterator[ParsedFinding]:
+    """Parse une sortie Nuclei (DAST). Le JSONL a ete converti en tableau en
+    amont (run_scanner). Chaque entree = un template declenche sur l'URL ;
+    l'identite (dedup) = template-id + emplacement (matched-at)."""
+    for item in report or []:
+        info = item.get("info") or {}
+        severity = SEVERITY_MAP_NUCLEI.get(
+            (info.get("severity") or "info").lower(), "info"
+        )
+        cves = (info.get("classification") or {}).get("cve-id") or []
+        if isinstance(cves, str):
+            cves = [cves]
+        yield ParsedFinding(
+            title=(info.get("name") or item.get("template-id") or "Finding Nuclei")[:500],
+            description=(info.get("description") or "")[:5000],
+            severity=severity,
+            cve=cves[0] if cves else None,
+            component=None,
+            rule_id=item.get("template-id"),
+            file_path=item.get("matched-at") or item.get("host"),
+            line_number=None,
+        )
+
+
 PARSERS = {
     "trivy": parse_trivy,
     "semgrep": parse_semgrep,
     "gitleaks": parse_gitleaks,
+    "nuclei": parse_nuclei,
 }
 
 
