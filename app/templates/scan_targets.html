@@ -14,11 +14,13 @@
     <select id="st-type">
       <option value="image">Image</option>
       <option value="repository">Dépôt git</option>
+      <option value="url">URL (DAST)</option>
     </select>
     <input id="st-ref" type="text" placeholder="nginx:1.25  ou  https://github.com/x/y.git">
     <input id="st-schedule" type="text" placeholder="Cron (optionnel) ex. 0 2 * * *">
     <div id="st-scanners" class="st-scanners"></div>
     <button id="st-add" class="btn btn-primary" type="button">Ajouter</button>
+    <p class="st-warn muted">DAST (type URL) : scan dynamique d'une cible vivante. Uniquement contre des cibles que vous possédez ou êtes explicitement autorisé à tester. Désactivé par défaut (dast_enabled).</p>
   </div>
 </section>
 {% endif %}
