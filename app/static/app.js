@@ -834,6 +834,36 @@
       host.appendChild(el("p", { class: "desc", text: f.description }));
     }
 
+    // Assistant IA (etape 19) : explication + piste de remediation en langage simple.
+    host.appendChild(el("h3", { class: "drawer-sub", text: "Assistant IA" }));
+    const aiBox = el("div", { class: "ai-box" });
+    const aiOut = el("div", { class: "ai-output" });
+    aiOut.hidden = true;
+    const aiRender = (txt) => {
+      clear(aiOut);
+      aiOut.appendChild(el("pre", { class: "ai-text", text: txt }));
+      aiOut.appendChild(el("p", { class: "ai-note muted", text: "Assistant IA — verifiez toujours avant d'appliquer une correction." }));
+      aiOut.hidden = false;
+    };
+    const aiBtn = el("button", { class: "btn btn-sm btn-primary", type: "button", text: "Expliquer cette vulnerabilite" });
+    aiBtn.addEventListener("click", async () => {
+      aiBtn.disabled = true;
+      aiBtn.textContent = "Generation…";
+      try {
+        const r = await apiSend("POST", "/ui/api/findings/" + f.id + "/explain");
+        aiRender(r.explanation);
+        aiBtn.hidden = true;
+      } catch (e) {
+        aiBtn.disabled = false;
+        aiBtn.textContent = "Expliquer cette vulnerabilite";
+        clear(aiOut);
+        aiOut.appendChild(el("p", { class: "muted", text: "Assistant IA indisponible : " + e.message }));
+        aiOut.hidden = false;
+      }
+    });
+    aiBox.appendChild(aiBtn);
+    aiBox.appendChild(aiOut);
+    host.appendChild(aiBox);
     // Triage
     if (d.can_write) {
       host.appendChild(el("h3", { class: "drawer-sub", text: "Triage" }));
