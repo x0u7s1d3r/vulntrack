@@ -58,7 +58,7 @@ CMD ["sh", "-c", "rm -f ${PROMETHEUS_MULTIPROC_DIR:-/data/prometheus}/* 2>/dev/n
 # client de registre -> AUCUN acces au socket Docker necessaire.
 FROM runtime AS worker
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends git \
+RUN apt-get update && apt-get install -y --no-install-recommends git unzip \
     && rm -rf /var/lib/apt/lists/*
 # Trivy (binaire epingle)
 RUN TRIVY_VERSION=0.74.0 \
@@ -70,6 +70,16 @@ RUN GITLEAKS_VERSION=8.18.4 \
        | tar -xz -C /usr/local/bin gitleaks
 # Semgrep (paquet Python, version epinglee pour des builds reproductibles)
 RUN pip install --no-cache-dir semgrep==1.176.0
+# Nuclei (DAST). Derniere release linux_amd64 (pinnable plus tard comme trivy).
+RUN NUCLEI_URL="$(curl -sSfL https://api.github.com/repos/projectdiscovery/nuclei/releases/latest \
+      | grep -oE 'https://[^"]*nuclei_[0-9.]+_linux_amd64\.zip' | head -n1)" \
+    && curl -sSfL "$NUCLEI_URL" -o /tmp/nuclei.zip \
+    && unzip -q /tmp/nuclei.zip nuclei -d /usr/local/bin \
+    && rm /tmp/nuclei.zip
+# Templates Nuclei bakes dans l'image (aucun telechargement au runtime)
+RUN git clone --depth 1 https://github.com/projectdiscovery/nuclei-templates.git \
+      /opt/nuclei-templates \
+    && chown -R vulntrack:vulntrack /opt/nuclei-templates
 # Caches accessibles en non-root (Trivy: base de vulns ; HOME: cache Semgrep/git)
 RUN mkdir -p /data/trivy-cache && chown -R vulntrack:vulntrack /data/trivy-cache
 ENV TRIVY_CACHE_DIR=/data/trivy-cache
