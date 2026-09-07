@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # Token d'acces aux depots prives (PAT GitHub). Reste dans la config,
     # JAMAIS en base ni dans l'UI. Injecte a la volee au clone.
     git_token: str = ""
+    # Assistant IA (Ollama). URL vide = IA desactivee (degradation propre).
+    ollama_url: str = ""
+    ollama_model: str = "llama3.2:3b"
+    ollama_timeout: int = 120
 
     @property
     def api_key_list(self) -> list[str]:
