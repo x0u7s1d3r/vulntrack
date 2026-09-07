@@ -179,3 +179,29 @@ def test_epss_failure_does_not_fail_the_scan(db_session, monkeypatch):
 
     finding = db_session.query(models.Finding).filter_by(cve="CVE-2024-0001").one()
     assert finding.epss_score is None
+
+
+# Deux entrees Nuclei a empreinte identique (meme template + meme URL) dans un
+# seul scan : reproduit le cas DAST reel qui violait la contrainte d'unicite.
+NUCLEI_REPORT_DUP = [
+    {"template-id": "http-missing-security-headers", "matched-at": "http://x",
+     "info": {"name": "Missing headers", "severity": "info"}},
+    {"template-id": "http-missing-security-headers", "matched-at": "http://x",
+     "info": {"name": "Missing headers", "severity": "info"}},
+]
+
+
+def test_process_scan_dedup_intra_scan(db_session, monkeypatch):
+    """Regression DAST : un scanner (Nuclei) peut emettre deux fois le meme
+    finding dans un seul scan. Sans dedup intra-scan, le db.flush() violait la
+    contrainte d'unicite sur fingerprint et tout le scan echouait."""
+    _install_session(monkeypatch, db_session)
+    _install_no_epss(monkeypatch)
+    _install_reports(monkeypatch, {"/fake/nuclei.json": NUCLEI_REPORT_DUP})
+
+    scan = _make_scan(db_session, "site-x", "nuclei", "/fake/nuclei.json", asset_type="url")
+    result = process_scan(scan.id)
+
+    assert result["status"] == "completed"
+    assert result["created"] == 1  # un seul finding, pas deux
+    assert db_session.query(models.Finding).filter_by(scanner="nuclei").count() == 1
