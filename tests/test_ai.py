@@ -90,8 +90,10 @@ def test_explain_finding_erreur_reseau_leve():
 def test_explain_finding_rejette_schema_non_http(monkeypatch):
     """Defense file:// : une ollama_url non-http(s) est refusee avant tout
     appel reseau (ferme le vecteur pointe par la regle semgrep)."""
-    import pytest
     from types import SimpleNamespace
+
+    import pytest
+
     import app.ai as ai
     monkeypatch.setattr(ai, "get_settings", lambda: SimpleNamespace(
         ollama_url="file:///etc/passwd", ollama_model="m", ollama_timeout=5))

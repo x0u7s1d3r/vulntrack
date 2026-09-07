@@ -63,8 +63,9 @@ def explain_finding(finding: Finding) -> str:
     timeout = settings.ollama_timeout
     try:
         # URL = config operateur (jamais une entree utilisateur), schema http(s)
-        # valide ci-dessus : le vecteur file:// de la regle semgrep est ferme.
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosemgrep
+        # valide ci-dessus : le vecteur file:// des deux regles SAST est ferme.
+        resp = urllib.request.urlopen(req, timeout=timeout)  # nosec B310  # nosemgrep
+        with resp:
             body = json.loads(resp.read())
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         logger.warning("Appel Ollama echoue: %s", exc)
