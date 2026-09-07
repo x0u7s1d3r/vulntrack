@@ -1,0 +1,16 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vulntrack.fullname" . }}-ollama
+  labels:
+    {{- include "vulntrack.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "vulntrack.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+  ports:
+    - name: http
+      port: 11434
+      targetPort: 11434
+{{- end }}

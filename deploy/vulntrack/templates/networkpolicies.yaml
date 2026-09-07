@@ -69,6 +69,13 @@ spec:
               app.kubernetes.io/component: redis
       ports:
         - port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "vulntrack.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: ollama
+      ports:
+        - port: 11434
 ---
 # 4. scheduler : sortie vers postgres+redis uniquement (pas d'Internet)
 apiVersion: networking.k8s.io/v1
@@ -176,4 +183,36 @@ spec:
               app.kubernetes.io/instance: {{ .Release.Name }}
       ports:
         - port: 6379
+{{- if .Values.ollama.enabled }}
+---
+# 8. ollama : entree depuis api (11434), sortie Internet pour puller le modele
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "vulntrack.fullname" . }}-ollama
+  labels:
+    {{- include "vulntrack.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "vulntrack.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: ollama
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "vulntrack.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports:
+        - port: 11434
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+{{- end }}
 {{- end }}

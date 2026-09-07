@@ -16,3 +16,8 @@ data:
   RATE_LIMIT_DEFAULT: {{ .Values.app.rateLimitDefault | quote }}
   RATE_LIMIT_WRITE: {{ .Values.app.rateLimitWrite | quote }}
   RATE_LIMIT_AUTH: {{ .Values.app.rateLimitAuth | quote }}
+  {{- if .Values.ollama.enabled }}
+  OLLAMA_URL: "http://{{ include "vulntrack.fullname" . }}-ollama:11434"
+  OLLAMA_MODEL: {{ .Values.ollama.model | quote }}
+  OLLAMA_TIMEOUT: {{ .Values.ollama.timeout | quote }}
+  {{- end }}
