@@ -827,3 +827,11 @@ h2.card-title::before { content: ""; width: 3px; height: 14px; border-radius: 2p
   background: rgba(127, 127, 127, 0.08);
 }
 .ai-note { font-size: .8rem; font-style: italic; margin: .25rem 0 0; }
+
+/* Assistant IA : rendu structure (etape 19, polish) */
+.ai-text { white-space: normal; }
+.ai-text p { margin: 0 0 .6rem; }
+.ai-text p:last-child { margin-bottom: 0; }
+.ai-text ol, .ai-text ul { margin: .3rem 0 .6rem 1.25rem; padding: 0; }
+.ai-text li { margin: .2rem 0; }
+.ai-text strong { font-weight: 600; }

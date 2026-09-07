@@ -841,7 +841,38 @@
     aiOut.hidden = true;
     const aiRender = (txt) => {
       clear(aiOut);
-      aiOut.appendChild(el("pre", { class: "ai-text", text: txt }));
+      const box = el("div", { class: "ai-text" });
+      const inlineInto = (parent, s) => {
+        s.split(/(\*\*[^*]+\*\*)/g).forEach((part) => {
+          if (/^\*\*[^*]+\*\*$/.test(part)) {
+            const b = document.createElement("strong");
+            b.textContent = part.slice(2, -2);
+            parent.appendChild(b);
+          } else if (part) {
+            parent.appendChild(document.createTextNode(part));
+          }
+        });
+      };
+      String(txt).replace(/\r\n/g, "\n").split(/\n{2,}/).forEach((block) => {
+        const rows = block.split("\n").map((l) => l.trim()).filter(Boolean);
+        if (!rows.length) return;
+        const numbered = rows.every((l) => /^\d+[.)]\s+/.test(l));
+        const bulleted = rows.every((l) => /^[-*]\s+/.test(l));
+        if (numbered || bulleted) {
+          const list = document.createElement(numbered ? "ol" : "ul");
+          rows.forEach((l) => {
+            const li = document.createElement("li");
+            inlineInto(li, l.replace(/^(\d+[.)]|[-*])\s+/, ""));
+            list.appendChild(li);
+          });
+          box.appendChild(list);
+        } else {
+          const para = document.createElement("p");
+          inlineInto(para, rows.join(" "));
+          box.appendChild(para);
+        }
+      });
+      aiOut.appendChild(box);
       aiOut.appendChild(el("p", { class: "ai-note muted", text: "Assistant IA — verifiez toujours avant d'appliquer une correction." }));
       aiOut.hidden = false;
     };
