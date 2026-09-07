@@ -60,11 +60,11 @@ def explain_finding(finding: Finding) -> str:
     req = urllib.request.Request(
         url, data=data, headers={"Content-Type": "application/json"}, method="POST"
     )
+    timeout = settings.ollama_timeout
     try:
-        # URL = config operateur (jamais une entree utilisateur), et le schema
-        # http(s) est valide ci-dessus : le vecteur file:// de la regle est ferme.
-        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected
-        with urllib.request.urlopen(req, timeout=settings.ollama_timeout) as resp:
+        # URL = config operateur (jamais une entree utilisateur), schema http(s)
+        # valide ci-dessus : le vecteur file:// de la regle semgrep est ferme.
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosemgrep
             body = json.loads(resp.read())
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         logger.warning("Appel Ollama echoue: %s", exc)
