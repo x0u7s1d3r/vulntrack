@@ -85,3 +85,17 @@ def test_explain_finding_erreur_reseau_leve():
     finally:
         os.environ.pop("OLLAMA_URL", None)
         get_settings.cache_clear()
+
+
+def test_explain_finding_rejette_schema_non_http(monkeypatch):
+    """Defense file:// : une ollama_url non-http(s) est refusee avant tout
+    appel reseau (ferme le vecteur pointe par la regle semgrep)."""
+    import pytest
+    from types import SimpleNamespace
+    import app.ai as ai
+    monkeypatch.setattr(ai, "get_settings", lambda: SimpleNamespace(
+        ollama_url="file:///etc/passwd", ollama_model="m", ollama_timeout=5))
+    # Le controle de schema intervient avant build_prompt : un finding vide suffit.
+    f = SimpleNamespace()
+    with pytest.raises(RuntimeError):
+        ai.explain_finding(f)

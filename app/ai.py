@@ -50,6 +50,8 @@ def explain_finding(finding: Finding) -> str:
         raise RuntimeError("IA non configuree")
 
     url = settings.ollama_url.rstrip("/") + "/api/generate"
+    if not url.startswith(("http://", "https://")):
+        raise RuntimeError("ollama_url doit utiliser le schema http(s)")
     data = json.dumps({
         "model": settings.ollama_model,
         "prompt": build_prompt(finding),
@@ -59,6 +61,9 @@ def explain_finding(finding: Finding) -> str:
         url, data=data, headers={"Content-Type": "application/json"}, method="POST"
     )
     try:
+        # URL = config operateur (jamais une entree utilisateur), et le schema
+        # http(s) est valide ci-dessus : le vecteur file:// de la regle est ferme.
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected
         with urllib.request.urlopen(req, timeout=settings.ollama_timeout) as resp:
             body = json.loads(resp.read())
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
