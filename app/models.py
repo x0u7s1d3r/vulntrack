@@ -88,6 +88,8 @@ class Finding(Base):
     # last_seen, qui suit les scans, pas l'activite humaine.
     updated_at = Column(DateTime(timezone=True), nullable=True)
 
+    # Explication IA (etape 19) generee a la demande puis mise en cache (NULL = pas encore).
+    ai_explanation = Column(Text, nullable=True)
     asset = relationship("Asset", back_populates="findings")
     notes = relationship(
         "FindingNote", back_populates="finding", cascade="all, delete-orphan"

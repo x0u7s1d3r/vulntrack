@@ -841,3 +841,33 @@ async def github_webhook(request: Request, db: Session = Depends(get_db)):
     db.commit()
     logger.info("Webhook GitHub: scan enfile pour %s", ", ".join(triggered))
     return {"status": "queued", "targets": triggered}
+
+
+@router.post("/api/findings/{finding_id}/explain")
+def api_finding_explain(
+    finding_id: int,
+    user: models.User = Depends(current_api_user),
+    db: Session = Depends(get_db),
+):
+    """Explication IA d'un finding : langage simple + piste de remediation.
+    Generee a la demande via Ollama, puis mise en cache (colonne ai_explanation)
+    pour ne solliciter le LLM qu'une seule fois par finding. Degrade proprement
+    si l'IA n'est pas configuree (503)."""
+    from app.ai import ai_enabled, explain_finding
+
+    if not ai_enabled():
+        raise HTTPException(status_code=503, detail="Assistant IA non configure")
+    f = db.get(models.Finding, finding_id)
+    if not f:
+        raise HTTPException(status_code=404, detail="Finding introuvable")
+    if f.ai_explanation:
+        return {"explanation": f.ai_explanation, "cached": True}
+    try:
+        text = explain_finding(f)
+    except Exception as exc:
+        logger.warning("Explication IA echouee (finding %s) : %s", finding_id, exc)
+        raise HTTPException(status_code=502, detail="Assistant IA indisponible") from exc
+    f.ai_explanation = text
+    db.commit()
+    logger.info("Explication IA generee et mise en cache (finding %s)", finding_id)
+    return {"explanation": text, "cached": False}
