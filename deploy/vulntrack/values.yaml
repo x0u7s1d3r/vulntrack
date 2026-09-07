@@ -6,10 +6,10 @@ image:
   pullPolicy: IfNotPresent      # utilise l'image chargee dans kind, sans pull
   api:
     repository: vulntrack-api
-    tag: "0.5.0"
+    tag: "0.6.1"
   worker:
     repository: vulntrack-worker
-    tag: "0.5.0"
+    tag: "0.6.0"
 
 app:
   replicas: 1
@@ -60,3 +60,12 @@ containerSecurityContext:
 
 networkPolicy:
   enabled: true
+
+# Assistant IA (etape 19) : LLM local Ollama, scalable 0<->1 pour la RAM.
+ollama:
+  enabled: true
+  image: ollama/ollama:latest
+  model: "llama3.2:3b"
+  replicas: 1
+  storage: 6Gi
+  timeout: "120"

@@ -1,0 +1,13 @@
+{{- if .Values.ollama.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vulntrack.fullname" . }}-ollama
+  labels:
+    {{- include "vulntrack.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.ollama.storage | quote }}
+{{- end }}

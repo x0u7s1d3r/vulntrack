@@ -21,8 +21,10 @@ Choix de conception et de securite :
 """
 
 import csv
+import hashlib
 import hmac
 import io
+import json
 import logging
 import secrets
 from datetime import datetime, timezone
@@ -791,3 +793,81 @@ def api_delete_scan_target(
     db.delete(target)
     db.commit()
     return {"status": "deleted"}
+
+
+@router.post("/webhooks/github", include_in_schema=False)
+async def github_webhook(request: Request, db: Session = Depends(get_db)):
+    """Webhook GitHub : sur un push, enfile un scan des ScanTarget de type
+    repository dont la reference correspond au depot pousse. Authentifie par
+    signature HMAC (X-Hub-Signature-256) : pas de session ni CSRF (appel
+    machine-a-machine)."""
+    secret = get_settings().github_webhook_secret
+    if not secret:
+        raise HTTPException(status_code=503, detail="Webhook non configure")
+
+    body = await request.body()
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(status_code=401, detail="Signature invalide")
+
+    if request.headers.get("X-GitHub-Event") != "push":
+        return {"status": "ignore", "reason": "evenement non gere"}
+
+    payload = json.loads(body or b"{}")
+    repo = payload.get("repository", {}) or {}
+    urls = {repo.get(k) for k in ("clone_url", "html_url", "git_url", "ssh_url")}
+
+    def _norm(u):
+        return (u or "").strip().removesuffix(".git").rstrip("/").lower()
+
+    norm_urls = {_norm(u) for u in urls if u}
+    targets = (
+        db.query(models.ScanTarget)
+        .filter(models.ScanTarget.target_type == "repository",
+                models.ScanTarget.enabled.is_(True))
+        .all()
+    )
+    matched = [t for t in targets if _norm(t.reference) in norm_urls]
+    if not matched:
+        return {"status": "ignore", "reason": "aucune cible correspondante"}
+
+    from app.queue import ingest_queue
+    triggered = []
+    for t in matched:
+        ingest_queue.enqueue("app.scanning.scan_target", t.id)
+        t.last_status = "queued"
+        triggered.append(t.name)
+    db.commit()
+    logger.info("Webhook GitHub: scan enfile pour %s", ", ".join(triggered))
+    return {"status": "queued", "targets": triggered}
+
+
+@router.post("/api/findings/{finding_id}/explain")
+def api_finding_explain(
+    finding_id: int,
+    user: models.User = Depends(current_api_user),
+    db: Session = Depends(get_db),
+):
+    """Explication IA d'un finding : langage simple + piste de remediation.
+    Generee a la demande via Ollama, puis mise en cache (colonne ai_explanation)
+    pour ne solliciter le LLM qu'une seule fois par finding. Degrade proprement
+    si l'IA n'est pas configuree (503)."""
+    from app.ai import ai_enabled, explain_finding
+
+    if not ai_enabled():
+        raise HTTPException(status_code=503, detail="Assistant IA non configure")
+    f = db.get(models.Finding, finding_id)
+    if not f:
+        raise HTTPException(status_code=404, detail="Finding introuvable")
+    if f.ai_explanation:
+        return {"explanation": f.ai_explanation, "cached": True}
+    try:
+        text = explain_finding(f)
+    except Exception as exc:
+        logger.warning("Explication IA echouee (finding %s) : %s", finding_id, exc)
+        raise HTTPException(status_code=502, detail="Assistant IA indisponible") from exc
+    f.ai_explanation = text
+    db.commit()
+    logger.info("Explication IA generee et mise en cache (finding %s)", finding_id)
+    return {"explanation": text, "cached": False}

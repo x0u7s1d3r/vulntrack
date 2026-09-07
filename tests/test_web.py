@@ -323,3 +323,82 @@ def test_findings_kev_filter_and_risk_sort(client, db_session):
     assert "risk" in d["items"][0] and "kev" in d["items"][0] and "overdue" in d["items"][0]
     risks = [i["risk"] for i in d["items"]]
     assert risks == sorted(risks, reverse=True)
+
+
+# ------------------------------------- Assistant IA : POST /explain (etape 19)
+def _first_finding(db_session):
+    return db_session.query(models.Finding).order_by(models.Finding.id).first()
+
+
+def test_explain_ia_desactivee_renvoie_503(client, db_session):
+    _create_user(db_session)
+    _asset_with_findings(db_session)
+    _login(client)
+    f = _first_finding(db_session)
+    # ollama_url vide par defaut en test => IA desactivee (degradation propre).
+    assert client.post(f"/ui/api/findings/{f.id}/explain").status_code == 503
+
+
+def test_explain_requiert_session(client, db_session):
+    _create_user(db_session)
+    _asset_with_findings(db_session)
+    f = _first_finding(db_session)
+    # Pas de login : 401 (la dependance d'auth passe avant le corps).
+    assert client.post(f"/ui/api/findings/{f.id}/explain").status_code == 401
+
+
+def test_explain_genere_puis_met_en_cache(client, db_session, monkeypatch):
+    _create_user(db_session)
+    _asset_with_findings(db_session)
+    _login(client)
+    f = _first_finding(db_session)
+    appels = {"n": 0}
+
+    def _fake_explain(finding):
+        appels["n"] += 1
+        return "Explication generee par le LLM."
+
+    monkeypatch.setattr("app.ai.ai_enabled", lambda: True)
+    monkeypatch.setattr("app.ai.explain_finding", _fake_explain)
+
+    # 1er appel : genere (cached=False), LLM sollicite une seule fois.
+    r1 = client.post(f"/ui/api/findings/{f.id}/explain")
+    assert r1.status_code == 200
+    assert r1.json() == {
+        "explanation": "Explication generee par le LLM.",
+        "cached": False,
+    }
+    assert appels["n"] == 1
+    db_session.expire_all()
+    assert _first_finding(db_session).ai_explanation == "Explication generee par le LLM."
+
+    # 2e appel : sert le cache (cached=True), LLM PAS rappele.
+    r2 = client.post(f"/ui/api/findings/{f.id}/explain")
+    assert r2.status_code == 200
+    assert r2.json()["cached"] is True
+    assert appels["n"] == 1
+
+
+def test_explain_erreur_ollama_renvoie_502_sans_cache(client, db_session, monkeypatch):
+    _create_user(db_session)
+    _asset_with_findings(db_session)
+    _login(client)
+    f = _first_finding(db_session)
+
+    def _boom(finding):
+        raise RuntimeError("ollama injoignable")
+
+    monkeypatch.setattr("app.ai.ai_enabled", lambda: True)
+    monkeypatch.setattr("app.ai.explain_finding", _boom)
+
+    assert client.post(f"/ui/api/findings/{f.id}/explain").status_code == 502
+    db_session.expire_all()
+    # Rien mis en cache : on pourra reessayer plus tard.
+    assert _first_finding(db_session).ai_explanation is None
+
+
+def test_explain_finding_inconnu_renvoie_404(client, db_session, monkeypatch):
+    _create_user(db_session)
+    _login(client)
+    monkeypatch.setattr("app.ai.ai_enabled", lambda: True)
+    assert client.post("/ui/api/findings/999999/explain").status_code == 404

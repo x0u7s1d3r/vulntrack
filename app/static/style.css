@@ -812,3 +812,26 @@ h2.card-title::before { content: ""; width: 3px; height: 14px; border-radius: 2p
 .st-scanners { display: flex; gap: .9rem; flex-wrap: wrap; align-items: center; }
 .st-sc-lbl { font-size: .85rem; opacity: .9; }
 .st-actions { display: flex; gap: .4rem; white-space: nowrap; }
+
+/* Assistant IA (etape 19) : explication/remediation en langage simple */
+.ai-box { margin: 0 0 1rem; }
+.ai-text {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: .9rem;
+  line-height: 1.55;
+  padding: .75rem;
+  margin: .5rem 0 .25rem;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.08);
+}
+.ai-note { font-size: .8rem; font-style: italic; margin: .25rem 0 0; }
+
+/* Assistant IA : rendu structure (etape 19, polish) */
+.ai-text { white-space: normal; }
+.ai-text p { margin: 0 0 .6rem; }
+.ai-text p:last-child { margin-bottom: 0; }
+.ai-text ol, .ai-text ul { margin: .3rem 0 .6rem 1.25rem; padding: 0; }
+.ai-text li { margin: .2rem 0; }
+.ai-text strong { font-weight: 600; }

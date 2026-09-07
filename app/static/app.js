@@ -834,6 +834,67 @@
       host.appendChild(el("p", { class: "desc", text: f.description }));
     }
 
+    // Assistant IA (etape 19) : explication + piste de remediation en langage simple.
+    host.appendChild(el("h3", { class: "drawer-sub", text: "Assistant IA" }));
+    const aiBox = el("div", { class: "ai-box" });
+    const aiOut = el("div", { class: "ai-output" });
+    aiOut.hidden = true;
+    const aiRender = (txt) => {
+      clear(aiOut);
+      const box = el("div", { class: "ai-text" });
+      const inlineInto = (parent, s) => {
+        s.split(/(\*\*[^*]+\*\*)/g).forEach((part) => {
+          if (/^\*\*[^*]+\*\*$/.test(part)) {
+            const b = document.createElement("strong");
+            b.textContent = part.slice(2, -2);
+            parent.appendChild(b);
+          } else if (part) {
+            parent.appendChild(document.createTextNode(part));
+          }
+        });
+      };
+      String(txt).replace(/\r\n/g, "\n").split(/\n{2,}/).forEach((block) => {
+        const rows = block.split("\n").map((l) => l.trim()).filter(Boolean);
+        if (!rows.length) return;
+        const numbered = rows.every((l) => /^\d+[.)]\s+/.test(l));
+        const bulleted = rows.every((l) => /^[-*]\s+/.test(l));
+        if (numbered || bulleted) {
+          const list = document.createElement(numbered ? "ol" : "ul");
+          rows.forEach((l) => {
+            const li = document.createElement("li");
+            inlineInto(li, l.replace(/^(\d+[.)]|[-*])\s+/, ""));
+            list.appendChild(li);
+          });
+          box.appendChild(list);
+        } else {
+          const para = document.createElement("p");
+          inlineInto(para, rows.join(" "));
+          box.appendChild(para);
+        }
+      });
+      aiOut.appendChild(box);
+      aiOut.appendChild(el("p", { class: "ai-note muted", text: "Assistant IA — verifiez toujours avant d'appliquer une correction." }));
+      aiOut.hidden = false;
+    };
+    const aiBtn = el("button", { class: "btn btn-sm btn-primary", type: "button", text: "Expliquer cette vulnerabilite" });
+    aiBtn.addEventListener("click", async () => {
+      aiBtn.disabled = true;
+      aiBtn.textContent = "Generation…";
+      try {
+        const r = await apiSend("POST", "/ui/api/findings/" + f.id + "/explain");
+        aiRender(r.explanation);
+        aiBtn.hidden = true;
+      } catch (e) {
+        aiBtn.disabled = false;
+        aiBtn.textContent = "Expliquer cette vulnerabilite";
+        clear(aiOut);
+        aiOut.appendChild(el("p", { class: "muted", text: "Assistant IA indisponible : " + e.message }));
+        aiOut.hidden = false;
+      }
+    });
+    aiBox.appendChild(aiBtn);
+    aiBox.appendChild(aiOut);
+    host.appendChild(aiBox);
     // Triage
     if (d.can_write) {
       host.appendChild(el("h3", { class: "drawer-sub", text: "Triage" }));

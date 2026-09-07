@@ -216,3 +216,70 @@ def test_scan_target_repository_scanne_le_clone_pas_lurl(db_session):
     assert captured["url"] == "https://github.com/x/y"
     # le scanner tourne sur le repertoire clone, jamais sur l'URL brute
     assert captured["source"] == captured["dest"]
+
+
+# ---------------------------------------------------- _git_clone (depots prives)
+
+import os  # noqa: E402
+
+from app.config import get_settings  # noqa: E402
+
+
+class _CloneProc:
+    def __init__(self, returncode=0, stderr=b""):
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def test_git_clone_injecte_le_token():
+    os.environ["GIT_TOKEN"] = "secret-token-xyz"
+    get_settings.cache_clear()
+    captured = {}
+
+    def _run(cmd, **kw):
+        captured["cmd"] = cmd
+        return _CloneProc(0)
+
+    try:
+        with patch("app.scanning.subprocess.run", side_effect=_run):
+            scanning._git_clone("https://github.com/x/y.git", "/tmp/d")
+    finally:
+        os.environ.pop("GIT_TOKEN", None)
+        get_settings.cache_clear()
+
+    assert "https://x-access-token:secret-token-xyz@github.com/x/y.git" in captured["cmd"]
+
+
+def test_git_clone_sans_token_url_nue():
+    os.environ.pop("GIT_TOKEN", None)
+    get_settings.cache_clear()
+    captured = {}
+
+    def _run(cmd, **kw):
+        captured["cmd"] = cmd
+        return _CloneProc(0)
+
+    with patch("app.scanning.subprocess.run", side_effect=_run):
+        scanning._git_clone("https://github.com/x/y.git", "/tmp/d")
+
+    assert "https://github.com/x/y.git" in captured["cmd"]
+    assert "x-access-token" not in " ".join(captured["cmd"])
+
+
+def test_git_clone_erreur_redige_le_token():
+    os.environ["GIT_TOKEN"] = "secret-token-xyz"
+    get_settings.cache_clear()
+
+    def _run(cmd, **kw):
+        return _CloneProc(128, b"fatal: could not read https://x-access-token:secret-token-xyz@github.com")
+
+    try:
+        with patch("app.scanning.subprocess.run", side_effect=_run):
+            with pytest.raises(RuntimeError) as exc:
+                scanning._git_clone("https://github.com/x/y.git", "/tmp/d")
+    finally:
+        os.environ.pop("GIT_TOKEN", None)
+        get_settings.cache_clear()
+
+    assert "secret-token-xyz" not in str(exc.value)   # le token ne fuit pas
+    assert "***" in str(exc.value)

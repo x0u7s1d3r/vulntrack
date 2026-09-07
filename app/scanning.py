@@ -11,6 +11,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.config import get_settings
 from app.database import SessionLocal
 from app.jobs import process_scan
 from app.models import Asset, Scan, ScanTarget
@@ -86,10 +87,23 @@ def _ingest(db, asset_name: str, asset_type: str, scanner: str, content: bytes) 
 
 
 def _git_clone(url: str, dest: str) -> None:
-    subprocess.run(
-        ["git", "clone", "--depth", "1", url, dest],
-        capture_output=True, timeout=SCANNER_TIMEOUT, check=True,
+    token = get_settings().git_token
+    clone_url = url
+    if token and url.startswith("https://") and "@" not in url:
+        # Depot prive : injecte le token (GitHub utilise l'utilisateur
+        # x-access-token). Le token ne quitte jamais la config.
+        clone_url = "https://x-access-token:" + token + "@" + url[len("https://"):]
+    proc = subprocess.run(
+        ["git", "clone", "--depth", "1", clone_url, dest],
+        capture_output=True, timeout=SCANNER_TIMEOUT, check=False,
     )
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode(errors="replace")
+        if token:
+            stderr = stderr.replace(token, "***")  # ne JAMAIS divulguer le token
+        raise RuntimeError(
+            f"git clone a echoue (code {proc.returncode}): {stderr[:400]}"
+        )
 
 
 def _finish_target(target_id: int, status: str) -> None:
